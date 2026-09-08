@@ -89,7 +89,7 @@ Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroni
 ### 1. Installation
 
 ```bash
-git clone https://github.com/your-username/AcceleratorAI.git
+git clone https://github.com/V1B3hR/AcceleratorAI.git
 cd AcceleratorAI
 pip install -e .
 ```
