@@ -14,6 +14,9 @@ from accelerator_ai.turbines.combustion import CombustionChamber
 from accelerator_ai.turbines.gradient_turbine import GradientTurbine
 from accelerator_ai.turbines.wastegate import WastegateValve
 from accelerator_ai.turbines.dispersion_valve import SwirlDispersionValve
+from accelerator_ai.turbines.sequential_turbo import SequentialTurboSystem, HPTurbo, LPTurbo
+from accelerator_ai.turbines.vvt import VariableValveTiming
+from accelerator_ai.turbines.gradient_turbine import TwinScrollHousing
 from accelerator_ai.core.flow_port import FlowPort, PortManifold
 from accelerator_ai.injectors.base_injector import AsyncDataInjector
 from accelerator_ai.injectors.synthetic import SyntheticInjector
@@ -23,9 +26,10 @@ from accelerator_ai.ecu.controller import BoostController
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
 from accelerator_ai.ecu.telemetry import TelemetryHub
 from accelerator_ai.models.neural_core import PureNumPyMLP
+from accelerator_ai.models.torch_adapter import PyTorchTurbineWrapper
 from accelerator_ai.engine import TurboLearningEngine
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "FlowPacket",
@@ -38,8 +42,13 @@ __all__ = [
     "Intercooler",
     "CombustionChamber",
     "GradientTurbine",
+    "TwinScrollHousing",
     "WastegateValve",
     "SwirlDispersionValve",
+    "SequentialTurboSystem",
+    "HPTurbo",
+    "LPTurbo",
+    "VariableValveTiming",
     "FlowPort",
     "PortManifold",
     "AsyncDataInjector",
@@ -50,5 +59,6 @@ __all__ = [
     "BraidedDNAController",
     "TelemetryHub",
     "PureNumPyMLP",
+    "PyTorchTurbineWrapper",
     "TurboLearningEngine",
 ]

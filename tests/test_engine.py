@@ -54,6 +54,21 @@ class TestEngine(unittest.TestCase):
         self.assertLess(res["boost_ratio"], 2.0)
         self.assertLess(res["learning_rate"], 0.02)
 
+    def test_pytorch_wrapper_graceful_import(self):
+        """If torch is missing, PyTorchTurbineWrapper must raise clear informative ImportError."""
+        from accelerator_ai.models.torch_adapter import PyTorchTurbineWrapper
+        try:
+            import torch
+            # If torch is installed, verify wrapper instantiation
+            m = torch.nn.Linear(4, 2)
+            opt = torch.optim.SGD(m.parameters(), lr=0.01)
+            loss_fn = torch.nn.CrossEntropyLoss()
+            wrapper = PyTorchTurbineWrapper(m, opt, loss_fn)
+            self.assertIsNotNone(wrapper)
+        except ImportError:
+            with self.assertRaises(ImportError):
+                PyTorchTurbineWrapper(None, None, None)
+
 
 if __name__ == "__main__":
     unittest.main()

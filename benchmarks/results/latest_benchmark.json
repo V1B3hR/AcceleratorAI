@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-09-08T10:15:55Z",
+  "timestamp": "2026-09-08T10:26:29Z",
   "acceleration_factor": {
     "mean_epochs_baseline": 1.4,
-    "mean_epochs_turbo": 1.0,
-    "mean_epochs_full": 1.2,
+    "mean_epochs_turbo": 1.2,
+    "mean_epochs_full": 1.0,
     "mean_acc_baseline": 68.93333333333334,
-    "mean_acc_turbo": 62.06666666666666,
-    "mean_acc_full": 66.66666666666667,
-    "af_full": 1.17
+    "mean_acc_turbo": 62.4,
+    "mean_acc_full": 63.8,
+    "af_full": 1.4
   },
   "data_efficiency": {
     "fractions": [
@@ -18,15 +18,15 @@
     ],
     "baseline_accuracies": [
       60.333333333333336,
-      66.33333333333333,
       64.0,
-      60.66666666666667
+      60.66666666666667,
+      56.00000000000001
     ],
     "full_accuracies": [
-      62.0,
-      65.33333333333333,
-      62.66666666666667,
-      64.33333333333333
+      66.0,
+      65.0,
+      64.33333333333333,
+      64.66666666666666
     ]
   },
   "trap_escape": {
@@ -44,16 +44,16 @@
     "baseline_accuracy": [
       65.66666666666666,
       65.66666666666666,
-      67.0,
-      64.33333333333333
+      64.33333333333333,
+      64.66666666666666
     ],
     "full_accuracy": [
-      62.66666666666667,
-      64.0,
-      63.66666666666667,
-      65.33333333333333
+      65.0,
+      65.66666666666666,
+      64.33333333333333,
+      65.0
     ],
-    "mean_advantage": -1.75
+    "mean_advantage": -0.08
   },
-  "total_duration_s": 11.23
+  "total_duration_s": 19.47
 }

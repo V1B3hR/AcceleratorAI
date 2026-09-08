@@ -23,6 +23,8 @@ from accelerator_ai.turbines.intercooler import Intercooler
 from accelerator_ai.turbines.combustion import CombustionChamber, CombustionResult
 from accelerator_ai.turbines.gradient_turbine import GradientTurbine
 from accelerator_ai.turbines.wastegate import WastegateValve
+from accelerator_ai.turbines.sequential_turbo import SequentialTurboSystem
+from accelerator_ai.turbines.vvt import VariableValveTiming
 from accelerator_ai.injectors.base_injector import AsyncDataInjector
 from accelerator_ai.injectors.synthetic import SyntheticInjector
 from accelerator_ai.injectors.realworld import RealWorldReservoirInjector
@@ -34,8 +36,8 @@ from accelerator_ai.ecu.telemetry import TelemetryHub
 
 class TurboLearningEngine:
     """
-    Orchestrates the entire turbocharged AI learning cycle with physical shaft inertia
-    and Braided DNA multi-strand control.
+    Orchestrates the entire turbocharged AI learning cycle with physical shaft inertia,
+    Braided DNA multi-strand control, Sequential Turbocharging (HP/LP), and Dynamic VVT.
     """
 
     def __init__(
@@ -46,6 +48,8 @@ class TurboLearningEngine:
         shaft_inertia: float = 0.08,
         enable_default_injectors: bool = True,
         injectors: Optional[List[AsyncDataInjector]] = None,
+        enable_sequential_turbo: bool = True,
+        enable_vvt: bool = True,
     ):
         self.model = model
         self.current_step: int = 0
@@ -65,8 +69,16 @@ class TurboLearningEngine:
         self.compressor = CompressorTurbine(shaft=self.shaft)
         self.intercooler = Intercooler()
         self.combustion = CombustionChamber()
-        self.gradient_turbine = GradientTurbine(shaft=self.shaft)
+        self.gradient_turbine = GradientTurbine(shaft=self.shaft, enable_twin_scroll=True)
         self.wastegate = WastegateValve()
+
+        # Sequential Turbocharging (HP fast spool + LP compound boost)
+        self.enable_sequential_turbo = enable_sequential_turbo
+        self.sequential_turbo = SequentialTurboSystem() if enable_sequential_turbo else None
+
+        # Variable Valve Timing (Dynamic cam phasing & micro-batch sizing)
+        self.enable_vvt = enable_vvt
+        self.vvt = VariableValveTiming(base_batch_size=32) if enable_vvt else None
 
         # Mount compressor and gradient turbine to common drive shaft
         self.compressor.attach_shaft(self.shaft)
@@ -108,8 +120,20 @@ class TurboLearningEngine:
         """
         self.current_step += 1
 
+        # 0. Variable Valve Timing (VVT) Phasing & Dynamic Intake Window Slicing
+        vvt_telemetry = {}
+        if self.vvt is not None:
+            dyn_batch, vvt_telemetry = self.vvt.update(
+                shaft_rpm=self.shaft.rpm,
+                boost_psi=self.compressor.boost_psi,
+                resonance_index=self.braided_ecu.resonance_index,
+            )
+            x_intake, y_intake = self.vvt.slice_batch(x_batch, y_batch)
+        else:
+            x_intake, y_intake = x_batch, y_batch
+
         # 1. Intake Stage: Ingest and regulate laminar flow
-        raw_packet = self.intake.ingest_raw(x_batch, y_batch)
+        raw_packet = self.intake.ingest_raw(x_intake, y_intake)
 
         # 2. Air Filter Stage: Clean out NaNs and outlier particles
         clean_packet = self.filter.process(raw_packet)
@@ -143,7 +167,7 @@ class TurboLearningEngine:
         if self.shock_injector:
             self.shock_injector.record_loss(loss)
 
-        # 7. Gradient Turbine: Harvest gradient norm and extract driving torque
+        # 7. Gradient Turbine: Harvest gradient norm and extract driving torque (Twin-Scroll divided)
         grad_norm, learning_torque = self.gradient_turbine.harvest_gradients(
             model=self.model,
             fused_packet=combustion_result.fused_packet,
@@ -167,6 +191,16 @@ class TurboLearningEngine:
             load_torque=compressor_load,
             dt=0.08,
         )
+
+        # 9b. Sequential Turbocharger System Update:
+        # Evaluates HP low-inertia spooling and LP compound transition
+        seq_telemetry = {}
+        if self.sequential_turbo is not None:
+            _, seq_telemetry = self.sequential_turbo.update(
+                learning_torque=learning_torque,
+                shaft_rpm=self.shaft.rpm,
+                dt=0.08,
+            )
 
         # 10. Thermal & Pyrometer Calculation
         pyrometer_temp = calculate_pyrometer_temp(loss=loss)
@@ -239,6 +273,14 @@ class TurboLearningEngine:
                 (hyper_port.last_routed_count / max(1, cooled_packet.batch_size)) * 100.0
             ) if hyper_port else 0.0,
             curriculum_weight_mean=float(np.mean(curriculum_weights)) if curriculum_weights is not None else 1.0,
+            sequential_stage=str(seq_telemetry.get("sequential_stage", "HP_PRIMARY")),
+            transition_valve_pct=float(seq_telemetry.get("transition_valve_pct", 0.0)),
+            hp_rpm=float(seq_telemetry.get("hp_rpm", 1200.0)),
+            lp_rpm=float(seq_telemetry.get("lp_rpm", 600.0)),
+            cam_advance_deg=float(vvt_telemetry.get("cam_advance_deg", 0.0)),
+            valve_lift=float(vvt_telemetry.get("valve_lift", 0.50)),
+            volumetric_efficiency=float(vvt_telemetry.get("volumetric_efficiency", 0.85)),
+            twin_scroll_balance=float(self.gradient_turbine.twin_scroll.pulse_balance) if self.gradient_turbine.twin_scroll else 1.0,
         )
         self.telemetry_hub.emit(telemetry)
 

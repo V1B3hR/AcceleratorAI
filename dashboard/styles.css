@@ -779,7 +779,88 @@ input[type="range"] {
   color: var(--color-text-muted);
 }
 
+/* Sequential Turbo & VVT Panel */
+.sequential-vvt-panel {
+  background: rgba(10, 14, 22, 0.78);
+  border: 1px solid rgba(176, 38, 255, 0.25);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 0 20px rgba(176, 38, 255, 0.08);
+}
+
+.panel-sub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-sub-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.stage-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--color-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.seq-turbos-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.seq-turbo-chip {
+  background: rgba(15, 20, 30, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+.chip-label {
+  font-size: 9px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.chip-val {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.seq-meter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seq-meter-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.transition-fill {
+  background: linear-gradient(90deg, #00f0ff, #b026ff);
+}
+
+.twin-scroll-fill {
+  background: linear-gradient(90deg, #00ff88, #00f0ff);
+}
+
 /* Responsive */
+
 @media (max-width: 1200px) {
   .cockpit-grid {
     grid-template-columns: 1fr;

@@ -150,6 +150,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const elHomogeneityBadge = document.getElementById('homogeneity-badge');
   const elCurriculumFactor = document.getElementById('val-curriculum-factor');
 
+  // Sequential Turbo & VVT Handles
+  const elSeqStage = document.getElementById('val-sequential-stage');
+  const elHpRpm = document.getElementById('val-hp-rpm');
+  const elLpRpm = document.getElementById('val-lp-rpm');
+  const elCamAdvance = document.getElementById('val-cam-advance');
+  const elTransitionValve = document.getElementById('val-transition-valve');
+  const elBarTransitionValve = document.getElementById('bar-transition-valve');
+  const elTwinScroll = document.getElementById('val-twin-scroll');
+  const elBarTwinScroll = document.getElementById('bar-twin-scroll');
+
   const elCycleCount = document.getElementById('cycle-count');
   const elLedSynth = document.getElementById('led-synth');
   const elLedReal = document.getElementById('led-real');
@@ -195,6 +205,12 @@ document.addEventListener('DOMContentLoaded', () => {
     hyperPct: 18.5,
     homogeneityPct: 100.0,
     curriculumFactor: 1.05,
+    sequentialStage: "HP_PRIMARY (LOW LAG)",
+    hpRpm: 1200,
+    lpRpm: 600,
+    camAdvance: 0.0,
+    transitionValvePct: 0.0,
+    twinScrollBalance: 1.0,
   };
 
   function appendLog(msg, colorClass = 'text-cyan') {
@@ -308,6 +324,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.hyper_flow_pct !== undefined) state.hyperPct = data.hyper_flow_pct;
     if (data.homogeneity_pct !== undefined) state.homogeneityPct = data.homogeneity_pct;
     if (data.curriculum_weight_mean !== undefined) state.curriculumFactor = data.curriculum_weight_mean;
+    if (data.sequential_stage !== undefined) state.sequentialStage = data.sequential_stage;
+    if (data.hp_rpm !== undefined) state.hpRpm = data.hp_rpm;
+    if (data.lp_rpm !== undefined) state.lpRpm = data.lp_rpm;
+    if (data.cam_advance_deg !== undefined) state.camAdvance = data.cam_advance_deg;
+    if (data.transition_valve_pct !== undefined) state.transitionValvePct = data.transition_valve_pct;
+    if (data.twin_scroll_balance !== undefined) state.twinScrollBalance = data.twin_scroll_balance;
   }
 
   connectTelemetryStream();
@@ -352,6 +374,32 @@ document.addEventListener('DOMContentLoaded', () => {
     state.rpm += (targetRpm - state.rpm) * 0.1;
     const omega = (state.rpm * 2 * Math.PI) / 60;
     state.shaftEk = 0.5 * 0.08 * (omega * omega);
+
+    // Sequential Turbo dynamics (HP fast spool, LP compound transition)
+    state.hpRpm = Math.min(12000, 1200 + state.rpm * 2.2);
+    if (state.rpm < 2200) {
+      state.sequentialStage = "HP_PRIMARY (LOW LAG)";
+      state.transitionValvePct = 0.0;
+      state.lpRpm = 600 + state.rpm * 0.2;
+    } else if (state.rpm <= 3400) {
+      state.sequentialStage = "TRANSITION (PRE-SPOOL)";
+      state.transitionValvePct = ((state.rpm - 2200) / 1200) * 100;
+      state.lpRpm = 800 + state.rpm * 1.1;
+    } else {
+      state.sequentialStage = "LP_COMPOUND (FULL BOOST)";
+      state.transitionValvePct = 100.0;
+      state.lpRpm = Math.min(8500, 1000 + state.rpm * 1.6);
+    }
+
+    // VVT Cam advance angle dynamics: advances with RPM
+    state.camAdvance = -15.0 + Math.min(60.0, (state.rpm / 4000.0) * 55.0);
+
+    // Twin-scroll balance (Scroll A primary vs Scroll B injection)
+    if (state.shockFired || state.synthFired) {
+      state.twinScrollBalance = 0.72;
+    } else {
+      state.twinScrollBalance = Math.min(1.0, state.twinScrollBalance + 0.05);
+    }
 
     // DNA Helical Resonance oscillation simulation
     state.helicalResonance = Math.sin(0.08 * state.step) * 0.6 + 0.2;
@@ -427,6 +475,30 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (elCurriculumFactor) {
         elCurriculumFactor.textContent = `${state.curriculumFactor.toFixed(3)}x`;
+      }
+    }
+
+    // Sequential Turbo & VVT UI Updates
+    if (elSeqStage) {
+      elSeqStage.textContent = state.sequentialStage;
+      if (elHpRpm) elHpRpm.textContent = Math.round(state.hpRpm);
+      if (elLpRpm) elLpRpm.textContent = Math.round(state.lpRpm);
+      if (elCamAdvance) {
+        const sign = state.camAdvance >= 0 ? '+' : '';
+        elCamAdvance.textContent = `${sign}${state.camAdvance.toFixed(1)}°`;
+      }
+      if (elTransitionValve) {
+        elTransitionValve.textContent = `${state.transitionValvePct.toFixed(1)}%`;
+      }
+      if (elBarTransitionValve) {
+        elBarTransitionValve.style.width = `${state.transitionValvePct}%`;
+      }
+      if (elTwinScroll) {
+        const mainPct = Math.round(state.twinScrollBalance * 100);
+        elTwinScroll.textContent = `${mainPct}% MAIN / ${100 - mainPct}% INJ`;
+      }
+      if (elBarTwinScroll) {
+        elBarTwinScroll.style.width = `${state.twinScrollBalance * 100}%`;
       }
     }
 

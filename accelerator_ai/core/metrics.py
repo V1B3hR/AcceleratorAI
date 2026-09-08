@@ -37,6 +37,14 @@ class EngineTelemetry:
     slowmo_flow_aperture: float = 0.85    # VGT slow-mo port aperture
     hyper_flow_pct: float = 0.0           # % of samples routed through hyper-flow port
     curriculum_weight_mean: float = 1.0   # Mean curriculum weight from VGT routing
+    sequential_stage: str = "HP_PRIMARY"  # Sequential Turbo stage (HP_PRIMARY, TRANSITION, LP_COMPOUND)
+    transition_valve_pct: float = 0.0     # Sequential bypass transition valve % (0 - 100%)
+    hp_rpm: float = 1200.0                # High-Pressure low-inertia turbo RPM
+    lp_rpm: float = 600.0                 # Low-Pressure compound turbo RPM
+    cam_advance_deg: float = 0.0          # VVT Camshaft advance angle (-30° to +45°)
+    valve_lift: float = 0.50              # VVT Intake valve lift fraction (0.25 - 1.00)
+    volumetric_efficiency: float = 0.85   # VVT Volumetric efficiency eta_v
+    twin_scroll_balance: float = 1.0      # Twin-Scroll exhaust pulse balance (Scroll A / (A+B))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert telemetry to serialized dictionary for JSON / WebSocket streaming."""

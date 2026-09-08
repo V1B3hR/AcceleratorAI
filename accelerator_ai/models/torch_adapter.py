@@ -1,9 +1,14 @@
 """
 PyTorchTurbineWrapper: Adapter bridge to run any PyTorch nn.Module
 within the AcceleratorAI VIBE Turbine training pipeline.
+
+Features:
+- Supports curriculum-weighted cross-entropy loss from VGT manifolds.
+- Registers gradient torque hooks across nn.Module layers.
+- Seamless compatibility with CombustionChamber, SequentialTurboSystem, and DriveShaft.
 """
 
-from typing import Tuple, Any, Optional
+from typing import Tuple, Any, Optional, Dict
 import numpy as np
 
 
@@ -13,7 +18,13 @@ class PyTorchTurbineWrapper:
     into the TurbineModel interface expected by CombustionChamber and GradientTurbine.
     """
 
-    def __init__(self, model: Any, optimizer: Any, loss_fn: Any):
+    def __init__(
+        self,
+        model: Any,
+        optimizer: Any,
+        loss_fn: Any,
+        enable_layer_hooks: bool = False,
+    ):
         try:
             import torch
             self.torch = torch
@@ -27,10 +38,36 @@ class PyTorchTurbineWrapper:
         self.model = model
         self.optimizer = optimizer
         self.loss_fn = loss_fn
-        self.last_loss_tensor: Optional[Any] = None
+        self.enable_layer_hooks = enable_layer_hooks
 
-    def forward_and_loss(self, x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Converts NumPy batch to torch.Tensor, runs forward pass and evaluates loss."""
+        self.last_loss_tensor: Optional[Any] = None
+        self.last_sample_weights: Optional[np.ndarray] = None
+        self.layer_gradient_torques: Dict[str, float] = {}
+
+        if self.enable_layer_hooks:
+            self._register_hooks()
+
+    def _register_hooks(self) -> None:
+        """Registers backward hooks on parameter tensors to measure layer work."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                def make_hook(p_name):
+                    def hook(grad):
+                        if grad is not None:
+                            self.layer_gradient_torques[p_name] = float(grad.detach().norm(2).item())
+                    return hook
+                param.register_hook(make_hook(name))
+
+    def forward_and_loss(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        sample_weights: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, float]:
+        """
+        Converts NumPy batch to torch.Tensor, runs forward pass and evaluates loss
+        (with optional per-sample curriculum weights from VGT PortManifold).
+        """
         x_tensor = self.torch.from_numpy(x).float()
         if y.ndim == 1:
             y_tensor = self.torch.from_numpy(y).long()
@@ -39,7 +76,27 @@ class PyTorchTurbineWrapper:
 
         self.optimizer.zero_grad()
         predictions = self.model(x_tensor)
-        loss = self.loss_fn(predictions, y_tensor)
+        self.last_sample_weights = sample_weights
+
+        # Evaluate loss (curriculum-weighted if weights provided)
+        if sample_weights is not None:
+            sw_tensor = self.torch.from_numpy(sample_weights).float().to(x_tensor.device)
+            # Try evaluating elementwise if loss function has reduction attribute
+            if hasattr(self.loss_fn, "reduction"):
+                orig_reduction = self.loss_fn.reduction
+                self.loss_fn.reduction = "none"
+                unreduced = self.loss_fn(predictions, y_tensor)
+                self.loss_fn.reduction = orig_reduction
+                if unreduced.ndim > 1:
+                    unreduced = unreduced.mean(dim=-1)
+                loss = (unreduced * sw_tensor).sum() / (sw_tensor.sum() + 1e-8)
+            else:
+                # Fallback: scale scalar loss by mean curriculum weight
+                base_loss = self.loss_fn(predictions, y_tensor)
+                loss = base_loss * sw_tensor.mean()
+        else:
+            loss = self.loss_fn(predictions, y_tensor)
+
         self.last_loss_tensor = loss
 
         pred_np = predictions.detach().cpu().numpy()
@@ -47,7 +104,7 @@ class PyTorchTurbineWrapper:
         return pred_np, loss_val
 
     def backward(self) -> float:
-        """Runs loss.backward() and computes the gradient L2 norm."""
+        """Runs loss.backward() and computes total parameter gradient L2 norm."""
         if self.last_loss_tensor is None:
             return 0.0
 

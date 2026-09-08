@@ -320,6 +320,54 @@
         <canvas id="oscilloscopeCanvas" width="380" height="100"></canvas>
       </div>
 
+      <!-- Sequential Turbo & VVT Stage Controller -->
+      <div class="sequential-vvt-panel">
+        <div class="panel-sub-header">
+          <div class="panel-sub-title">
+            <span>⚡</span>
+            <strong>SEQUENTIAL TURBO & VVT CAM PHASING</strong>
+          </div>
+          <span class="stage-badge font-mono" id="val-sequential-stage">HP_PRIMARY (LOW LAG)</span>
+        </div>
+
+        <div class="seq-turbos-row font-mono">
+          <div class="seq-turbo-chip hp-chip">
+            <div class="chip-label">HP TURBO (I=0.012)</div>
+            <div class="chip-val highlight-cyan"><span id="val-hp-rpm">1200</span> RPM</div>
+          </div>
+          <div class="seq-turbo-chip lp-chip">
+            <div class="chip-label">LP TURBO (I=0.085)</div>
+            <div class="chip-val highlight-purple"><span id="val-lp-rpm">600</span> RPM</div>
+          </div>
+          <div class="seq-turbo-chip vvt-chip">
+            <div class="chip-label">VVT CAM ANGLE</div>
+            <div class="chip-val highlight-green"><span id="val-cam-advance">+0.0°</span></div>
+          </div>
+        </div>
+
+        <!-- Sequential Bypass Valve Meter -->
+        <div class="seq-meter-block">
+          <div class="seq-meter-header font-mono">
+            <span>TRANSITION BYPASS VALVE</span>
+            <strong id="val-transition-valve">0.0%</strong>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill transition-fill" id="bar-transition-valve" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Twin-Scroll Exhaust Balance Meter -->
+        <div class="seq-meter-block">
+          <div class="seq-meter-header font-mono">
+            <span>TWIN-SCROLL PULSE ISOLATION (SCROLL A / B)</span>
+            <strong id="val-twin-scroll">100% MAIN</strong>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill twin-scroll-fill" id="bar-twin-scroll" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ECU Tuning Controls -->
       <div class="ecu-controls-section">
         <h3>ECU CALIBRATION SLIDERS</h3>
