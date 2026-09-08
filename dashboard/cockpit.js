@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Visualizers
   const turbineVis = new TurbineVisualizer('turbineCanvas');
   const oscVis = new OscilloscopeVisualizer('oscilloscopeCanvas');
+  const dnaVis = new DNAHelixVisualizer('dnaHelixCanvas');
 
   // Initialize Analog Gauges
   const gaugeRpm = new AnalogGauge('gaugeRpmCanvas', { minVal: 0, maxVal: 7000, color: '#00f0ff' });
@@ -125,6 +126,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const elBarWastegate = document.getElementById('bar-wastegate');
   const elValLoss = document.getElementById('val-loss');
   const elBarLoss = document.getElementById('bar-loss');
+
+  // DNA Braided Helices Handles
+  const elResonanceBadge = document.getElementById('resonance-badge');
+  const elValShaftEk = document.getElementById('val-shaft-ek');
+  const elValPhaseTension = document.getElementById('val-phase-tension');
+  const elValWindingRevs = document.getElementById('val-winding-revs');
 
   const elCycleCount = document.getElementById('cycle-count');
   const elLedSynth = document.getElementById('led-synth');
@@ -161,6 +168,10 @@ document.addEventListener('DOMContentLoaded', () => {
     boostTarget: 14.7,
     jitter: 0.15,
     wastegateThreshold: 5.0,
+    helicalResonance: 0.42,
+    phaseTension: 0.15,
+    shaftEk: 120.0,
+    windingRevs: 0.0,
   };
 
   function appendLog(msg, colorClass = 'text-cyan') {
@@ -264,6 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
     state.loss = data.loss || state.loss;
     state.afr = data.air_fuel_ratio || state.afr;
     state.wastegatePct = data.wastegate_open_pct || 0.0;
+    if (data.helical_resonance !== undefined) state.helicalResonance = data.helical_resonance;
+    if (data.phase_tension !== undefined) state.phaseTension = data.phase_tension;
+    if (data.shaft_kinetic_energy_j !== undefined) state.shaftEk = data.shaft_kinetic_energy_j;
+    if (data.winding_number !== undefined) state.windingRevs = data.winding_number;
   }
 
   connectTelemetryStream();
@@ -303,9 +318,16 @@ document.addEventListener('DOMContentLoaded', () => {
       state.wastegatePct = Math.max(0, state.wastegatePct * 0.85);
     }
 
-    // RPM dynamics
+    // RPM & Shaft Kinetic Energy dynamics
     const targetRpm = 1000 + (state.boostPsi * 120) + (state.torqueNm * 65);
     state.rpm += (targetRpm - state.rpm) * 0.1;
+    const omega = (state.rpm * 2 * Math.PI) / 60;
+    state.shaftEk = 0.5 * 0.08 * (omega * omega);
+
+    // DNA Helical Resonance oscillation simulation
+    state.helicalResonance = Math.sin(0.08 * state.step) * 0.6 + 0.2;
+    state.phaseTension = Math.max(0.05, 1.0 - Math.max(0, state.helicalResonance));
+    state.windingRevs = (state.step * 0.04).toFixed(1);
 
     // UI Updates
     elCycleCount.textContent = state.step;
@@ -332,6 +354,18 @@ document.addEventListener('DOMContentLoaded', () => {
     elValLoss.textContent = state.loss.toFixed(4);
     elBarLoss.style.width = `${Math.min(100, state.loss * 70)}%`;
 
+    // DNA Braided UI Updates
+    const isConstructive = state.helicalResonance >= 0.0;
+    if (elResonanceBadge) {
+      elResonanceBadge.className = `resonance-badge font-mono ${isConstructive ? '' : 'tension'}`;
+      const sign = state.helicalResonance >= 0 ? '+' : '';
+      const mode = isConstructive ? 'CONSTRUCTIVE' : 'TENSION / BIFURCATION';
+      elResonanceBadge.textContent = `RESONANCE: ${sign}${state.helicalResonance.toFixed(3)} (${mode})`;
+    }
+    if (elValShaftEk) elValShaftEk.textContent = `${state.shaftEk.toFixed(1)} J`;
+    if (elValPhaseTension) elValPhaseTension.textContent = state.phaseTension.toFixed(3);
+    if (elValWindingRevs) elValWindingRevs.textContent = `${state.windingRevs} rev`;
+
     // Injector LEDs & Counts
     elLedSynth.classList.toggle('pulsing', state.synthFired);
     elLedReal.classList.toggle('pulsing', state.realFired);
@@ -342,10 +376,11 @@ document.addEventListener('DOMContentLoaded', () => {
     elCountShock.textContent = state.counts.shock;
   }, 100);
 
-  // 60 FPS Render Loop for Turbine and Gauges
+  // 60 FPS Render Loop for Turbine, DNA Helix and Gauges
   function renderLoop() {
     turbineVis.draw(state.rpm, state.boostPsi, state.tempC);
     oscVis.draw(state.synthFired, state.realFired, state.shockFired);
+    dnaVis.draw(state.helicalResonance, state.phaseTension);
     gaugeRpm.draw();
     gaugeBoost.draw();
     gaugeTemp.draw();

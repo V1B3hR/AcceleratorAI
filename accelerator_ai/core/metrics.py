@@ -14,17 +14,23 @@ class EngineTelemetry:
     """
     step: int = 0
     epoch: int = 0
-    rpm: float = 0.0                      # Virtual engine RPM (training velocity)
+    rpm: float = 0.0                      # Physical DriveShaft RPM
     boost_psi: float = 0.0                # Intake manifold boost pressure (psi)
     manifold_pressure: float = 1.0        # Normalized pressure ratio Psi
     pyrometer_temp_c: float = 200.0       # Exhaust / Loss thermal index (degrees C analog)
     loss: float = 0.0                     # Current combustion loss
     learning_torque_nm: float = 0.0       # Gradient magnitude * boost (Nm analog)
+    compressor_load_nm: float = 0.0       # Mechanical reaction load of compressing fluid
+    shaft_kinetic_energy_j: float = 0.0   # Stored mechanical rotational kinetic energy (0.5 * I * omega^2)
+    angular_accel_rad_s2: float = 0.0     # DriveShaft rotational acceleration
     wastegate_open_pct: float = 0.0       # Wastegate relief percentage (0 - 100%)
     air_fuel_ratio: float = 14.7          # Ratio of base intake to injected supplemental fuel
     injected_entropy: float = 0.0         # Chaos perturbation magnitude injected
     active_injectors: int = 0             # Number of async injectors active in this cycle
-    learning_rate: float = 0.001          # Current ECU-tuned learning rate
+    learning_rate: float = 0.001          # Current Braided ECU-tuned learning rate
+    helical_resonance: float = 0.0        # DNA Braided resonance index H in [-1.0, 1.0]
+    phase_tension: float = 0.0            # Braided multi-strand tension (creative friction)
+    winding_number: float = 0.0           # Helical winding revolutions
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert telemetry to serialized dictionary for JSON / WebSocket streaming."""

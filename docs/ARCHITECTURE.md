@@ -22,24 +22,40 @@ A data stream is encapsulated as a `FlowPacket`:
 - **Entropy Temperature ($T$)**: Variance and stochastic perturbation level.
 - **Phase Angle ($\phi$)**: Temporal position along the engine rotation cycle.
 
-### 2.2 Turbo Boost & Information Compression
-The intake compressor wheel raises the informational density before the combustion chamber:
+### 2.2 Mechanical Drive Shaft Dynamics (Feedback Loop 1.0)
+The exhaust turbine and intake compressor are physically linked via a common **Drive Shaft** with rotational moment of inertia $I$:
 
-$$\Psi_{\text{boost}} = \Psi_{\text{ambient}} \times \left(1 + \frac{\text{Boost}_{\text{PSI}}}{14.7}\right)$$
+$$I \frac{d\omega}{dt} = \tau_{\text{gradient}} - \tau_{\text{compressor\_load}} - \beta (\omega - \omega_{\text{idle}})$$
 
-### 2.3 Learning Torque ($\tau$)
-The exhaust-driven Gradient Turbine captures the backpropagation gradient magnitude $\|\nabla_\theta \mathcal{L}\|$ and converts it into rotational update torque:
+where:
+- $\tau_{\text{gradient}} = \|\nabla_\theta \mathcal{L}\| \times \Psi_{\text{boost}} \times \eta_{\text{shaft}}$ (Driving work harvested from backprop).
+- $\tau_{\text{compressor\_load}} = C_L \cdot (\Psi_{\text{boost}} - 1.0) \cdot \left(\frac{\omega}{1000}\right)$ (Reaction load required to compress the fluid).
+- $\beta$ is the viscous bearing drag coefficient.
 
-$$\tau_{\text{learning}} = \|\nabla_\theta \mathcal{L}\| \times \Psi_{\text{boost}} \times \eta_{\text{shaft}}$$
+Stored Rotational Kinetic Energy:
+$$E_k = \frac{1}{2} I \omega^2$$
 
-This torque is transmitted through the Drive Shaft to accelerate optimizer momentum.
+### 2.3 Turbomachinery Euler Pressure Rise
+Centrifugal boost pressure ratio $\Psi_{\text{boost}}$ is a direct quadratic function of blade tip peripheral velocity:
 
-### 2.4 Wastegate Blow-off Regulation
-If gradient norm exceeds the structural knock threshold $\theta_{\text{max}}$:
+$$\Psi_{\text{boost}} = 1.0 + \kappa \cdot \left(\frac{\omega}{\omega_{\text{idle}}}\right)^{1.5}$$
 
-$$\text{Venting} = \max\left(0, \frac{\|\nabla_\theta \mathcal{L}\| - \theta_{\text{max}}}{\theta_{\text{max}}}\right) \times 100\%$$
+### 2.4 The DNA Plecionka (Braided Multi-Strand Dynamics)
+Rather than a top-down scalar PID loop, the system is governed by **4 interwoven physical strands**:
+1. **$\mathcal{S}_{\text{grad}}$ (Gradient Strand)**: $\tau(t) = \|\nabla \mathcal{L}\| \cdot \text{Boost}$.
+2. **$\mathcal{S}_{\text{press}}$ (Pressure Strand)**: $\Psi(t)$, dictating hard-sample selection and augmentation magnitude.
+3. **$\mathcal{S}_{\text{inj}}$ (Injection Strand)**: $\sum_k w_k \cdot \sin(\omega_k t + \Delta \phi_k + \epsilon)$.
+4. **$\mathcal{S}_{\text{therm}}$ (Thermal Strand)**: $T(t)$, pyrometer heat driving intercooler damping and wastegate venting.
 
-The wastegate clips gradients and signals the ECU to retard timing (decrease learning rate), preventing model destruction.
+**Cross-Strand Phase Interference Matrix**:
+$$M_{ij}(t) = \cos(\theta_i(t) - \theta_j(t))$$
+
+**Helical Resonance Index ($\mathcal{H} \in [-1, 1]$)**:
+$$\mathcal{H}(t) = \frac{1}{6} \sum_{i < j} M_{ij}(t)$$
+
+- **$\mathcal{H} > 0$ (Constructive Resonance)**: Strands are in harmonic alignment; energy flows efficiently from gradient to compression; learning rate accelerates:
+  $$\eta_{\text{braid}} = \eta_{\text{base}} \cdot (1.0 + 0.35 \cdot \mathcal{H}) \cdot \sqrt{\Psi_{\text{boost}}}$$
+- **$\mathcal{H} < 0$ (Destructive Tension / Creative Bifurcation)**: Strands are desynchronized, preventing premature convergence. When prolonged tension occurs ($\bar{\mathcal{H}} < -0.25$), a phase symmetry-breaking event ("kopniak z boku") is fired to eject the model into an emergent basin.
 
 ---
 

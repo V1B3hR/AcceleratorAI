@@ -73,13 +73,15 @@ Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroni
 
 1. **Fluid-Dynamic Medium (`FlowPacket`)**:
    Data carries physical attributes: Information Pressure ($\Psi$), Viscosity ($\eta$), Thermal Entropy ($T$), and Temporal Phase Angle ($\phi$).
-2. **Asynchronous Multi-Point Injectors**:
+2. **Mechanical Feedback Loop 1.0 (`DriveShaft`)**:
+   Physical Newton-Euler rotational dynamics ($I \frac{d\omega}{dt} = \tau_{\text{in}} - \tau_{\text{load}} - \beta \omega$). Kinetic energy stored in the rotating shaft ($E_k = \frac{1}{2} I \omega^2$) physically drives the compressor wheel according to Euler's turbomachinery equation ($\Delta P \propto \omega^{1.5}$). Rotor RPM is a true internal dynamical state, not a heuristic.
+3. **DNA Plecionka (Braided Helical Control)**:
+   Replaces top-down scalar PID loops with **4 interwoven physical strands** (Gradient, Pressure, Injection, Thermal) winding around each other. Cross-strand phase interference ($\mathcal{H} \in [-1, 1]$) is a primary feature: constructive resonance surges learning throughput, while destructive tension triggers creative phase bifurcation to bust local minima.
+4. **Asynchronous Multi-Point Injectors**:
    Independent background injectors pulsing synthetic and edge-case batches with distinct phase offsets ($\Delta \phi_k$). When training plateaus, the **Chaos Shock Injector ("kopniak z boku")** delivers a sudden, non-linear entropy jolt that knocks the model out of local minima traps.
-3. **Closed-Loop ECU Boost Controller**:
-   Digital PID controller continuously modulating compressor boost (PSI), learning rate, and wastegate blow-off based on live learning velocity (RPM) and exhaust temperature.
-4. **Interactive Turbine Cockpit**:
-   A cyber-mechanical aerospace telemetry dashboard featuring a live 60 FPS spinning turbine rotor, analog gauges (RPM, Boost PSI, Pyrometer EGT, Learning Torque), and real-time interactive controls.
-5. **Zero-Dependency Native Execution**:
+5. **Interactive Turbine Cockpit**:
+   A cyber-mechanical aerospace telemetry dashboard featuring a live 60 FPS spinning turbine rotor, **DNA Braided Helices 3D ribbon visualizer**, analog gauges (RPM, Boost PSI, Pyrometer EGT, Learning Torque), and real-time interactive controls.
+6. **Zero-Dependency Native Execution**:
    Runs out-of-the-box using pure Python + NumPy (`PureNumPyMLP`), while providing seamless PyTorch integration via `PyTorchTurbineWrapper`.
 
 ---

@@ -132,13 +132,17 @@ class CockpitHTTPHandler(SimpleHTTPRequestHandler):
         self.send_error(404, "Unknown action")
 
 
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+
 def run_server():
     # Start training thread
     t = threading.Thread(target=engine_training_worker, daemon=True)
     t.start()
 
     server_address = ("", PORT)
-    httpd = HTTPServer(server_address, CockpitHTTPHandler)
+    httpd = ReusableHTTPServer(server_address, CockpitHTTPHandler)
     print("=" * 70)
     print(f"   ACCELERATOR-AI TURBINE COCKPIT SERVER RUNNING")
     print(f"   >> Open in browser: http://localhost:{PORT}")

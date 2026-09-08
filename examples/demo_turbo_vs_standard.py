@@ -128,7 +128,10 @@ def main():
     print(f"| Total Training Time         | {base_time:18.2f}s | {turbo_time:19.2f}s |")
     print(f"| Injected Perturbations      |                   0 | {len(telemetry):20d} |")
     print(f"| Final Learning Torque (Nm)  |                 N/A | {telemetry[-1].learning_torque_nm:20.3f} |")
-    print(f"| Peak Virtual RPM            |                 N/A | {max(t.rpm for t in telemetry):20.1f} |")
+    print(f"| Peak Physical Shaft RPM     |                 N/A | {max(t.rpm for t in telemetry):20.1f} |")
+    print(f"| Shaft Kinetic Energy (J)    |                 N/A | {telemetry[-1].shaft_kinetic_energy_j:20.2f} |")
+    print(f"| Helical Resonance Index (H) |                 N/A | {telemetry[-1].helical_resonance:20.4f} |")
+    print(f"| DNA Multi-Strand Tension    |                 N/A | {telemetry[-1].phase_tension:20.4f} |")
     print(f"| Wastegate Relief Events     |                   0 | {turbo_engine.wastegate.total_relief_events:20d} |")
     print("=" * 70)
 

@@ -1,13 +1,15 @@
 """
-Gradient Turbine: Exhaust-driven turbine wheel.
-Extracts kinetic energy from backprop loss gradients, spinning the main drive shaft
-and feeding rotational energy back to the intake compressor wheel.
+Gradient Turbine: Exhaust-driven turbine wheel physically mounted on the DriveShaft.
+
+Extracts kinetic energy from backprop loss gradients, generating physical torque
+that accelerates the DriveShaft and powers the intake compressor.
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 import numpy as np
 from accelerator_ai.core.base_turbine import TurbineModule
 from accelerator_ai.core.flow_packet import FlowPacket
+from accelerator_ai.core.shaft import DriveShaft
 from accelerator_ai.core.metrics import calculate_learning_torque
 
 
@@ -15,16 +17,24 @@ class GradientTurbine(TurbineModule):
     """
     Simulates the exhaust turbine housing and wheel.
     The backward pass flows through this turbine; the magnitude of the gradients
-    spins the rotor, generating Learning Torque that updates model parameters
-    and powers the intake compressor via the common shaft.
+    generates Learning Torque that drives the physical DriveShaft.
     """
 
-    def __init__(self, shaft_mechanical_efficiency: float = 0.92):
+    def __init__(
+        self,
+        shaft_mechanical_efficiency: float = 0.92,
+        shaft: Optional[DriveShaft] = None,
+    ):
         super().__init__(name="GradientTurbine")
         self.shaft_efficiency = shaft_mechanical_efficiency
+        self.shaft = shaft
         self.learning_torque_nm: float = 0.0
         self.cumulative_torque: float = 0.0
         self.gradient_norm: float = 0.0
+
+    def attach_shaft(self, shaft: DriveShaft) -> None:
+        """Physically mounts turbine wheel onto a DriveShaft."""
+        self.shaft = shaft
 
     def process(self, packet: FlowPacket) -> FlowPacket:
         """Passthrough placeholder for generic pipeline chaining."""
@@ -51,9 +61,12 @@ class GradientTurbine(TurbineModule):
         self.learning_torque_nm = float(raw_torque * self.shaft_efficiency)
         self.cumulative_torque += self.learning_torque_nm
 
-        # Spin exhaust turbine rotor proportional to gradient energy
-        rpm_delta = min(500.0, self.learning_torque_nm * 80.0)
-        self.spin(delta_rpm=rpm_delta)
+        # Update local module telemetry
+        if self.shaft is not None:
+            self.rpm = self.shaft.rpm
+        else:
+            rpm_delta = min(500.0, self.learning_torque_nm * 80.0)
+            self.spin(delta_rpm=rpm_delta)
 
         self.total_processed_packets += 1
         self.total_processed_samples += fused_packet.batch_size
