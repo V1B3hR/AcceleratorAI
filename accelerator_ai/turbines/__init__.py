@@ -6,6 +6,7 @@ from accelerator_ai.turbines.combustion import CombustionChamber, CombustionResu
 from accelerator_ai.turbines.gradient_turbine import GradientTurbine
 from accelerator_ai.turbines.wastegate import WastegateValve
 from accelerator_ai.turbines.dispersion_valve import SwirlDispersionValve
+from accelerator_ai.core.flow_port import FlowPort, PortManifold
 
 __all__ = [
     "IntakeTurbine",
@@ -17,4 +18,6 @@ __all__ = [
     "GradientTurbine",
     "WastegateValve",
     "SwirlDispersionValve",
+    "FlowPort",
+    "PortManifold",
 ]

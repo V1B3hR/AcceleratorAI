@@ -186,6 +186,14 @@ class TurboLearningEngine:
         if braid_status["should_phase_shock"]:
             self.trigger_nos()
 
+        # 11b. Variable Geometry Aperture Control:
+        # BraidedDNA emits aperture_signals; smoothly adjust compressor inlet ports
+        aperture_signals = braid_status.get("aperture_signals", {})
+        for port in self.compressor.inlet_manifold.ports:
+            target = aperture_signals.get(port.mode, None)
+            if target is not None:
+                port.adjust_towards(target, speed=0.12)
+
         # 12. Drive Shaft: Apply weight updates using Braided ECU-tuned learning rate
         self.model.apply_updates(learning_rate=braid_status["learning_rate"])
 
@@ -197,6 +205,12 @@ class TurboLearningEngine:
         self.previous_loss = loss
 
         # 13. Telemetry Dispatch
+        # Collect VGT port state
+        hyper_port = self.compressor.inlet_manifold.get_port("hyper")
+        cruise_port = self.compressor.inlet_manifold.get_port("cruise")
+        slowmo_port = self.compressor.inlet_manifold.get_port("slowmo")
+        curriculum_weights = combustion_result.fused_packet.metadata.get("curriculum_weights", None)
+
         telemetry = EngineTelemetry(
             step=self.current_step,
             epoch=self.current_epoch,
@@ -218,10 +232,18 @@ class TurboLearningEngine:
             phase_tension=float(braid_status["phase_tension"]),
             winding_number=float(braid_status["winding_number"]),
             homogeneity_pct=float(combustion_result.homogeneity_pct),
+            hyper_flow_aperture=float(hyper_port.aperture) if hyper_port else 0.15,
+            cruise_flow_aperture=float(cruise_port.aperture) if cruise_port else 0.50,
+            slowmo_flow_aperture=float(slowmo_port.aperture) if slowmo_port else 0.85,
+            hyper_flow_pct=float(
+                (hyper_port.last_routed_count / max(1, cooled_packet.batch_size)) * 100.0
+            ) if hyper_port else 0.0,
+            curriculum_weight_mean=float(np.mean(curriculum_weights)) if curriculum_weights is not None else 1.0,
         )
         self.telemetry_hub.emit(telemetry)
 
         return combustion_result
+
 
     def train_epoch(
         self,

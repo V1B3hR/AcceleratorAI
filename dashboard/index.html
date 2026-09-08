@@ -184,6 +184,73 @@
           </div>
         </div>
       </div>
+
+      <!-- Variable Geometry Multi-Port Manifold (VGT) & Swirl Atomization -->
+      <div class="vgt-manifold-panel">
+        <div class="vgt-panel-header">
+          <div class="vgt-title">
+            <span class="vgt-icon">🔀</span>
+            <strong>VARIABLE GEOMETRY MANIFOLD (VGT)</strong>
+            <span class="vgt-tag font-mono">VENTURI CURRICULUM</span>
+          </div>
+          <div class="vgt-badge font-mono" id="homogeneity-badge">SWIRL HOMOGENEITY: 100%</div>
+        </div>
+
+        <div class="vgt-ports-grid">
+          <!-- Hyper-Flow Port -->
+          <div class="vgt-port-card hyper-port">
+            <div class="port-header">
+              <span class="port-glyph">⚡</span>
+              <span class="port-name">HYPER-FLOW PORT</span>
+              <span class="port-aperture font-mono" id="val-aperture-hyper">0.150 ap</span>
+            </div>
+            <div class="port-meter">
+              <div class="port-fill hyper-fill" id="bar-aperture-hyper" style="width: 15%;"></div>
+            </div>
+            <div class="port-meta font-mono">
+              <span>VELOCITY: <strong id="val-vel-hyper" class="highlight-cyan">6.7x</strong></span>
+              <span>FOCUS: <strong id="val-pct-hyper" class="highlight-amber">0.0%</strong></span>
+            </div>
+          </div>
+
+          <!-- Cruise-Flow Port -->
+          <div class="vgt-port-card cruise-port">
+            <div class="port-header">
+              <span class="port-glyph">✈️</span>
+              <span class="port-name">CRUISE PORT</span>
+              <span class="port-aperture font-mono" id="val-aperture-cruise">0.500 ap</span>
+            </div>
+            <div class="port-meter">
+              <div class="port-fill cruise-fill" id="bar-aperture-cruise" style="width: 50%;"></div>
+            </div>
+            <div class="port-meta font-mono">
+              <span>VELOCITY: <strong id="val-vel-cruise" class="highlight-green">2.0x</strong></span>
+              <span>PASS: <strong>STANDARD</strong></span>
+            </div>
+          </div>
+
+          <!-- Slow-Mo Flow Port -->
+          <div class="vgt-port-card slowmo-port">
+            <div class="port-header">
+              <span class="port-glyph">🌊</span>
+              <span class="port-name">SLOW-MO PORT</span>
+              <span class="port-aperture font-mono" id="val-aperture-slowmo">0.850 ap</span>
+            </div>
+            <div class="port-meter">
+              <div class="port-fill slowmo-fill" id="bar-aperture-slowmo" style="width: 85%;"></div>
+            </div>
+            <div class="port-meta font-mono">
+              <span>VELOCITY: <strong id="val-vel-slowmo" class="highlight-purple">1.2x</strong></span>
+              <span>MODE: <strong>CONSOLIDATE</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="vgt-footer-strip font-mono">
+          <span>CURRICULUM TORQUE FACTOR: <strong id="val-curriculum-factor" class="highlight-cyan">1.000x</strong></span>
+          <span>ROUTING: <strong class="highlight-green">VENTURI ENERGY (||x||)</strong></span>
+        </div>
+      </div>
     </section>
 
     <!-- Right Column: Asynchronous Multi-Point Injectors & ECU Controls -->

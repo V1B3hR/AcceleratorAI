@@ -73,8 +73,9 @@ class CombustionChamber(TurbineModule):
             else float(base_samples / max(1, injected_sample_count))
         )
 
-        # Forward pass on the model
-        predictions, loss = model.forward_and_loss(fused.x, fused.y)
+        # Forward pass on the model (with VGT curriculum weighting if available)
+        curriculum_weights = fused.metadata.get("curriculum_weights", None)
+        predictions, loss = model.forward_and_loss(fused.x, fused.y, sample_weights=curriculum_weights)
 
         # Informational combustion energy = Loss * Manifold Pressure
         exhaust_energy = float(loss * fused.pressure)

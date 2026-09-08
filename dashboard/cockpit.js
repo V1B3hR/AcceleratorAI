@@ -133,6 +133,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const elValPhaseTension = document.getElementById('val-phase-tension');
   const elValWindingRevs = document.getElementById('val-winding-revs');
 
+  // VGT Multi-Port & Swirl Handles
+  const elApertureHyper = document.getElementById('val-aperture-hyper');
+  const elBarApertureHyper = document.getElementById('bar-aperture-hyper');
+  const elVelHyper = document.getElementById('val-vel-hyper');
+  const elPctHyper = document.getElementById('val-pct-hyper');
+
+  const elApertureCruise = document.getElementById('val-aperture-cruise');
+  const elBarApertureCruise = document.getElementById('bar-aperture-cruise');
+  const elVelCruise = document.getElementById('val-vel-cruise');
+
+  const elApertureSlowmo = document.getElementById('val-aperture-slowmo');
+  const elBarApertureSlowmo = document.getElementById('bar-aperture-slowmo');
+  const elVelSlowmo = document.getElementById('val-vel-slowmo');
+
+  const elHomogeneityBadge = document.getElementById('homogeneity-badge');
+  const elCurriculumFactor = document.getElementById('val-curriculum-factor');
+
   const elCycleCount = document.getElementById('cycle-count');
   const elLedSynth = document.getElementById('led-synth');
   const elLedReal = document.getElementById('led-real');
@@ -172,6 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
     phaseTension: 0.15,
     shaftEk: 120.0,
     windingRevs: 0.0,
+    hyperAperture: 0.15,
+    cruiseAperture: 0.50,
+    slowmoAperture: 0.85,
+    hyperPct: 18.5,
+    homogeneityPct: 100.0,
+    curriculumFactor: 1.05,
   };
 
   function appendLog(msg, colorClass = 'text-cyan') {
@@ -279,6 +302,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.phase_tension !== undefined) state.phaseTension = data.phase_tension;
     if (data.shaft_kinetic_energy_j !== undefined) state.shaftEk = data.shaft_kinetic_energy_j;
     if (data.winding_number !== undefined) state.windingRevs = data.winding_number;
+    if (data.hyper_flow_aperture !== undefined) state.hyperAperture = data.hyper_flow_aperture;
+    if (data.cruise_flow_aperture !== undefined) state.cruiseAperture = data.cruise_flow_aperture;
+    if (data.slowmo_flow_aperture !== undefined) state.slowmoAperture = data.slowmo_flow_aperture;
+    if (data.hyper_flow_pct !== undefined) state.hyperPct = data.hyper_flow_pct;
+    if (data.homogeneity_pct !== undefined) state.homogeneityPct = data.homogeneity_pct;
+    if (data.curriculum_weight_mean !== undefined) state.curriculumFactor = data.curriculum_weight_mean;
   }
 
   connectTelemetryStream();
@@ -329,6 +358,14 @@ document.addEventListener('DOMContentLoaded', () => {
     state.phaseTension = Math.max(0.05, 1.0 - Math.max(0, state.helicalResonance));
     state.windingRevs = (state.step * 0.04).toFixed(1);
 
+    // VGT Multi-Port Aperture Dynamics
+    // When resonance is constructive (focus), hyper-port narrows; when tension, it widens
+    const h = state.helicalResonance;
+    state.hyperAperture = Math.max(0.06, Math.min(0.35, 0.15 - h * 0.04));
+    state.slowmoAperture = Math.max(0.60, Math.min(0.95, 0.85 + h * 0.05));
+    state.hyperPct = Math.max(5.0, Math.min(45.0, 20.0 + h * 12.0));
+    state.curriculumFactor = Math.max(0.8, Math.min(1.4, 1.0 + (1.0 / Math.max(0.05, state.hyperAperture) - 6.67) * 0.03));
+
     // UI Updates
     elCycleCount.textContent = state.step;
     elImpellerRpm.textContent = `${Math.round(state.rpm)} RPM`;
@@ -365,6 +402,33 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elValShaftEk) elValShaftEk.textContent = `${state.shaftEk.toFixed(1)} J`;
     if (elValPhaseTension) elValPhaseTension.textContent = state.phaseTension.toFixed(3);
     if (elValWindingRevs) elValWindingRevs.textContent = `${state.windingRevs} rev`;
+
+    // VGT Multi-Port UI Updates
+    if (elApertureHyper) {
+      const velHyper = (1.0 / Math.max(0.01, state.hyperAperture)).toFixed(1);
+      const velCruise = (1.0 / Math.max(0.01, state.cruiseAperture)).toFixed(1);
+      const velSlowmo = (1.0 / Math.max(0.01, state.slowmoAperture)).toFixed(1);
+
+      elApertureHyper.textContent = `${state.hyperAperture.toFixed(3)} ap`;
+      elBarApertureHyper.style.width = `${Math.min(100, state.hyperAperture * 100)}%`;
+      elVelHyper.textContent = `${velHyper}x`;
+      elPctHyper.textContent = `${state.hyperPct.toFixed(1)}%`;
+
+      elApertureCruise.textContent = `${state.cruiseAperture.toFixed(3)} ap`;
+      elBarApertureCruise.style.width = `${Math.min(100, state.cruiseAperture * 100)}%`;
+      elVelCruise.textContent = `${velCruise}x`;
+
+      elApertureSlowmo.textContent = `${state.slowmoAperture.toFixed(3)} ap`;
+      elBarApertureSlowmo.style.width = `${Math.min(100, state.slowmoAperture * 100)}%`;
+      elVelSlowmo.textContent = `${velSlowmo}x`;
+
+      if (elHomogeneityBadge) {
+        elHomogeneityBadge.textContent = `SWIRL HOMOGENEITY: ${state.homogeneityPct.toFixed(0)}%`;
+      }
+      if (elCurriculumFactor) {
+        elCurriculumFactor.textContent = `${state.curriculumFactor.toFixed(3)}x`;
+      }
+    }
 
     // Injector LEDs & Counts
     elLedSynth.classList.toggle('pulsing', state.synthFired);

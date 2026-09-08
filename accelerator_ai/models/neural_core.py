@@ -66,9 +66,23 @@ class PureNumPyMLP:
         exp_z = np.exp(z - np.max(z, axis=-1, keepdims=True))
         return exp_z / (np.sum(exp_z, axis=-1, keepdims=True) + 1e-8)
 
-    def forward_and_loss(self, x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Runs forward pass through layers and evaluates cross-entropy loss."""
+    def forward_and_loss(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        sample_weights: np.ndarray = None,
+    ) -> Tuple[np.ndarray, float]:
+        """Runs forward pass through layers and evaluates cross-entropy loss.
+
+        Args:
+            x: Input features.
+            y: Target labels (hard int or soft float).
+            sample_weights: Optional per-sample curriculum weights from VGT
+                           PortManifold. Shape (n,). If provided, loss is a
+                           weighted mean instead of uniform mean.
+        """
         self.last_activations = [x]
+        self.last_sample_weights = sample_weights
         current = x
 
         for i in range(len(self.weights) - 1):
@@ -83,29 +97,40 @@ class PureNumPyMLP:
         self.last_predictions = probs
         self.last_y_true = y
 
-        # Compute Cross-Entropy Loss
+        # Compute Cross-Entropy Loss (optionally curriculum-weighted)
         eps = 1e-9
         y_flat = y.ravel()
         is_soft = np.issubdtype(y_flat.dtype, np.floating) and np.any((y_flat > 0.0) & (y_flat < 1.0))
 
         if is_soft:
-            # Binary soft target cross entropy
             p1 = probs[:, 1]
-            loss = -np.mean(y_flat * np.log(p1 + eps) + (1.0 - y_flat) * np.log(1.0 - p1 + eps))
+            per_sample = -(y_flat * np.log(p1 + eps) + (1.0 - y_flat) * np.log(1.0 - p1 + eps))
         elif y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1):
             y_indices = np.round(y).astype(int).ravel()
             n = len(y_indices)
-            loss = -np.mean(np.log(probs[np.arange(n), y_indices] + eps))
+            per_sample = -np.log(probs[np.arange(n), y_indices] + eps)
         else:
-            loss = -np.mean(np.sum(y * np.log(probs + eps), axis=-1))
+            per_sample = -np.sum(y * np.log(probs + eps), axis=-1)
+
+        # Weighted or uniform mean
+        if sample_weights is not None and len(sample_weights) == len(per_sample):
+            loss = float(np.sum(per_sample * sample_weights) / (np.sum(sample_weights) + eps))
+        else:
+            loss = float(np.mean(per_sample))
 
         return probs, float(loss)
 
     def backward(self) -> float:
-        """Runs backward pass, storing gradients and returning total gradient norm."""
+        """Runs backward pass, storing gradients and returning total gradient norm.
+
+        If sample_weights were provided to forward_and_loss, the output gradient
+        delta is scaled per-sample by curriculum weight, so hyper-flow samples
+        contribute proportionally more torque to the gradient turbine.
+        """
         probs = self.last_activations[-1]
         y = self.last_y_true
         n = probs.shape[0]
+        sw = getattr(self, 'last_sample_weights', None)
 
         # Output gradient
         y_flat = y.ravel()
@@ -123,6 +148,10 @@ class PureNumPyMLP:
             delta /= n
         else:
             delta = (probs - y) / n
+
+        # Apply per-sample curriculum weighting to the gradient
+        if sw is not None and len(sw) == n:
+            delta = delta * sw[:, np.newaxis]
 
         # Backprop through layers
         total_sq_norm = 0.0

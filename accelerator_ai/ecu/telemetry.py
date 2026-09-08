@@ -22,6 +22,11 @@ class TelemetryHub:
         """Subscribes a callback to receive every telemetry event."""
         self.listeners.append(callback)
 
+    @property
+    def latest(self) -> Optional[EngineTelemetry]:
+        """Returns the most recent telemetry event recorded, or None."""
+        return self.latest_telemetry
+
     def emit(self, telemetry: EngineTelemetry) -> None:
         """Records telemetry into history and broadcasts to all active listeners."""
         self.latest_telemetry = telemetry

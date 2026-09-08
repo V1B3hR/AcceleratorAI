@@ -32,6 +32,11 @@ class EngineTelemetry:
     phase_tension: float = 0.0            # Braided multi-strand tension (creative friction)
     winding_number: float = 0.0           # Helical winding revolutions
     homogeneity_pct: float = 100.0        # Swirl dispersion & atomization homogeneity index (0 - 100%)
+    hyper_flow_aperture: float = 0.15     # VGT hyper-flow port aperture (0.05 - 1.0)
+    cruise_flow_aperture: float = 0.50    # VGT cruise port aperture
+    slowmo_flow_aperture: float = 0.85    # VGT slow-mo port aperture
+    hyper_flow_pct: float = 0.0           # % of samples routed through hyper-flow port
+    curriculum_weight_mean: float = 1.0   # Mean curriculum weight from VGT routing
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert telemetry to serialized dictionary for JSON / WebSocket streaming."""

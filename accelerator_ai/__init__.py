@@ -13,6 +13,8 @@ from accelerator_ai.turbines.intercooler import Intercooler
 from accelerator_ai.turbines.combustion import CombustionChamber
 from accelerator_ai.turbines.gradient_turbine import GradientTurbine
 from accelerator_ai.turbines.wastegate import WastegateValve
+from accelerator_ai.turbines.dispersion_valve import SwirlDispersionValve
+from accelerator_ai.core.flow_port import FlowPort, PortManifold
 from accelerator_ai.injectors.base_injector import AsyncDataInjector
 from accelerator_ai.injectors.synthetic import SyntheticInjector
 from accelerator_ai.injectors.realworld import RealWorldReservoirInjector
@@ -37,6 +39,9 @@ __all__ = [
     "CombustionChamber",
     "GradientTurbine",
     "WastegateValve",
+    "SwirlDispersionValve",
+    "FlowPort",
+    "PortManifold",
     "AsyncDataInjector",
     "SyntheticInjector",
     "RealWorldReservoirInjector",

@@ -3,13 +3,13 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Architecture: VIBE Turbine](https://img.shields.io/badge/Architecture-VIBE%20Turbine%20Dynamics-cyan.svg)](#)
-[![Tests: Passing](https://img.shields.io/badge/Tests-14%20Passing-brightgreen.svg)](#)
+[![Tests: Passing](https://img.shields.io/badge/Tests-32%20Passing-brightgreen.svg)](#)
 
 > **"What if we treat training data as a pressurized fluid medium, and neural network optimization as a turbocharged combustion engine?"**
 
-**AcceleratorAI** is a groundbreaking machine learning acceleration framework inspired by **fluid mechanics and internal combustion turbochargers**. 
+**AcceleratorAI** is a groundbreaking machine learning acceleration framework inspired by **fluid mechanics, variable-geometry turbomachinery, and internal combustion dynamics**. 
 
-Instead of traditional, monotonous mini-batching, AcceleratorAI pressurizes information streams, stabilizes thermal variance through intercooling, ignites representations in the combustion chamber, and harvests backward loss gradients through an exhaust turbine to spin the parameter update shaft.
+Instead of traditional, monotonous mini-batching, AcceleratorAI pressurizes information streams through **Variable Geometry Multi-Port Inlets (VGT)**, stabilizes thermal variance through intercooling, mixes charges with the **Swirl Dispersion Valve**, ignites representations in the combustion chamber, and harvests backward loss gradients through an exhaust turbine to spin the physical mechanical drive shaft.
 
 Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroniczne")** that fire phase-shifted synthetic perturbations, real-world edge data, and entropy shockwaves (**"kopniak z boku"**) into the combustion chamber to shatter local minima plateaus and induce rapid, emergent adaptation.
 
@@ -31,40 +31,51 @@ Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroni
 └────────┬─────────┘
         │
         ▼
+┌──────────────────────────────────────────────────────────┐
+│ COMPRESSOR TURBINE + VARIABLE GEOMETRY MANIFOLD (VGT)    │
+│  • Hyper-Flow Port: Narrow aperture (0.15), v = 6.7x     │ ◄── Venturi equation
+│    Routes high-pressure/hard samples → heavy loss weight │     A₁v₁ = A₂v₂
+│  • Cruise Port: Standard aperture (0.50), v = 2.0x       │
+│  • Slow-Mo Port: Wide aperture (0.85), v = 1.2x          │
+│    Routes low-pressure samples → gentle consolidation    │
+└────────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
 ┌──────────────────┐      ┌────────────────────────────────────────────────────────┐
-│COMPRESSOR TURBINE│      │       ASYNC MULTI-POINT INJECTION SYSTEM               │
-│  (Pressure Boost)│      │  • Synthetic Injector (Boundary exploration)           │
+│   INTERCOOLER    │      │       ASYNC MULTI-POINT INJECTION SYSTEM               │
+│  (Normalization) │      │  • Synthetic Injector (Boundary exploration)           │
 └────────┬─────────┘      │  • Real-World Injector (OOD calibration)               │
-        │                │  • Chaos/Shock Injector ("Kopniak z boku" / entropy)   │
-        ▼                │    - Phase-shifted timing (Δφ), variable velocity pulses│
-┌──────────────────┐      └──────────────────────────┬─────────────────────────────┘
-│   INTERCOOLER    │                                 │
-│  (Normalization) │                                 │ (Asynchronous fuel pulses)
-└────────┬─────────┘                                 │
-        │                                           │
-        └─────────────────────┬─────────────────────┘
-                              ▼
-                   ┌───────────────────────┐
-                   │  COMBUSTION CHAMBER   │  <─── Ignites FlowPackets (Forward + Loss)
-                   └──────────┬────────────┘
-                              │ (Exhaust Gas Energy = Loss Gradients)
-                              ▼
-                   ┌───────────────────────┐      ┌─────────────────────────┐
-                   │   GRADIENT TURBINE    ├─────►│  WASTEGATE / BLOW-OFF   │
-                   │ (Harvests backprop)   │      │  (Gradient clipping/    │
-                   └──────────┬────────────┘      │   Thermal relief)       │
-                              │                   └─────────────────────────┘
-                              ▼
-                   ┌───────────────────────┐
-                   │      DRIVE SHAFT      │  Momentum Parameter Updates
-                   └──────────┬────────────┘
-                              │
-                              ▼
-                   ┌───────────────────────┐      ┌─────────────────────────┐
-                   │   UPDATED AI WEIGHTS  │◄────┤  ECU BOOST CONTROLLER   │
-                   └───────────────────────┘      │  (PID loop tuning Boost,│
-                                                  │   Curriculum & Injections)
-                                                  └─────────────────────────┘
+         │                │  • Chaos/Shock Injector ("Kopniak z boku" / entropy)   │
+         │                │    - Phase-shifted timing (Δφ), variable velocity pulses│
+         │                └──────────────────────────┬─────────────────────────────┘
+         │                                           │ (Asynchronous fuel pulses)
+         └─────────────────────┬─────────────────────┘
+                               ▼
+                    ┌───────────────────────┐
+                    │ SWIRL DISPERSION VALVE│  Diffusive atomization & stratified
+                    └──────────┬────────────┘  toroidal swirl interleaving (H > 90%)
+                               ▼
+                    ┌───────────────────────┐
+                    │  COMBUSTION CHAMBER   │  Ignites FlowPackets (Weighted Cross-Entropy)
+                    └──────────┬────────────┘  Curriculum-weighted loss from VGT ports
+                               │ (Exhaust Gas Energy = Loss Gradients)
+                               ▼
+                    ┌───────────────────────┐      ┌─────────────────────────┐
+                    │   GRADIENT TURBINE    ├─────►│  WASTEGATE / BLOW-OFF   │
+                    │ (Curriculum Torque τ) │      │  (Gradient clipping/    │
+                    └──────────┬────────────┘      │   Thermal relief)       │
+                               │                   └─────────────────────────┘
+                               ▼
+                    ┌───────────────────────┐
+                    │      DRIVE SHAFT      │  Physical Euler-Newton updates
+                    └──────────┬────────────┘  Closed loop: Hard samples → more τ
+                               │               → higher RPM → higher boost!
+                               ▼
+                    ┌───────────────────────┐      ┌─────────────────────────┐
+                    │   UPDATED AI WEIGHTS  │◄────┤ DNA PLECIONKA ECU       │
+                    └───────────────────────┘      │ (4 helical coupled      │
+                                                   │  strands + VGT aperture)│
+                                                   └─────────────────────────┘
 ```
 
 ---
@@ -73,15 +84,17 @@ Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroni
 
 1. **Fluid-Dynamic Medium (`FlowPacket`)**:
    Data carries physical attributes: Information Pressure ($\Psi$), Viscosity ($\eta$), Thermal Entropy ($T$), and Temporal Phase Angle ($\phi$).
-2. **Mechanical Feedback Loop 1.0 (`DriveShaft`)**:
-   Physical Newton-Euler rotational dynamics ($I \frac{d\omega}{dt} = \tau_{\text{in}} - \tau_{\text{load}} - \beta \omega$). Kinetic energy stored in the rotating shaft ($E_k = \frac{1}{2} I \omega^2$) physically drives the compressor wheel according to Euler's turbomachinery equation ($\Delta P \propto \omega^{1.5}$). Rotor RPM is a true internal dynamical state, not a heuristic.
-3. **DNA Plecionka (Braided Helical Control)**:
-   Replaces top-down scalar PID loops with **4 interwoven physical strands** (Gradient, Pressure, Injection, Thermal) winding around each other. Cross-strand phase interference ($\mathcal{H} \in [-1, 1]$) is a primary feature: constructive resonance surges learning throughput, while destructive tension triggers creative phase bifurcation to bust local minima.
-4. **Asynchronous Multi-Point Injectors & Swirl Dispersion Valve**:
-   Independent background injectors pulsing synthetic and edge-case batches with distinct phase offsets ($\Delta \phi_k$). Eliminates crude batch concatenation by introducing the **Swirl Dispersion Valve (`SwirlDispersionValve`)**, which atomizes high-entropy perturbations into micro-droplet feature diffusion and toroidally interleaves discrete real-world edge packets across the cylinder charge. This prevents localized gradient knocking and maintains uniform flame front homogeneity ($H_{\text{dispersion}} > 90\%$). When training plateaus, the **Chaos Shock Injector ("kopniak z boku")** delivers a sudden entropy jolt that knocks the model out of local minima traps.
-5. **Interactive Turbine Cockpit**:
-   A cyber-mechanical aerospace telemetry dashboard featuring a live 60 FPS spinning turbine rotor, **DNA Braided Helices 3D ribbon visualizer**, analog gauges (RPM, Boost PSI, Pyrometer EGT, Learning Torque), and real-time interactive controls.
-6. **Zero-Dependency Native Execution**:
+2. **Variable Geometry Multi-Port Turbine System (VGT - `FlowPort` & `PortManifold`)**:
+   Replaces rigid one-size-fits-all batching with **multi-port variable-geometry orifices** governed by the Venturi continuity equation ($A_1 v_1 = A_2 v_2 \implies v_{\text{port}} = \frac{1}{\text{aperture}} v_{\text{base}}$). Hard samples (high feature energy $||\mathbf{x}_i||$) flow through narrow **hyper-flow ports** with accelerated velocity and higher curriculum weight, while easier samples flow through wide **slow-mo ports** for gentle consolidation.
+3. **Closed Physical Acceleration Loop (`DriveShaft` + `GradientTurbine`)**:
+   True physical Newton-Euler dynamics ($I \frac{d\omega}{dt} = \tau_{\text{in}} - \tau_{\text{load}} - \beta \omega$). Rotational kinetic energy ($E_k = \frac{1}{2} I \omega^2$) powers the intake compressor according to Euler's turbomachinery equation ($\Delta P \propto \omega^{1.5}$). Crucially, batches with hard samples generate **curriculum-weighted torque**, spinning the shaft faster, elevating boost, and closing the feedback loop.
+4. **DNA Plecionka with Dynamic Aperture Regulation**:
+   Replaces static PID loops with **4 interwoven physical strands** (Gradient, Pressure, Injection, Thermal). Constructive resonance ($\mathcal{H} > 0$) tightens hyper-flow apertures for hyper-focused learning, while destructive tension ($\mathcal{H} < 0$) widens ports for broad exploration and triggers creative phase symmetry breaking.
+5. **Asynchronous Multi-Point Injectors & Swirl Dispersion Valve**:
+   Independent background injectors pulsing synthetic and edge-case batches with distinct phase offsets ($\Delta \phi_k$). Eliminates crude concatenation via the **Swirl Dispersion Valve (`SwirlDispersionValve`)**, which atomizes high-entropy perturbations into micro-droplet feature diffusion and toroidally interleaves discrete edge packets ($H_{\text{dispersion}} > 90\%$). When training plateaus, the **Chaos Shock Injector ("kopniak z boku")** delivers a sudden entropy jolt that knocks the model out of local minima traps.
+6. **Interactive Turbine Cockpit with VGT Multi-Port Gauges**:
+   A cyber-mechanical aerospace telemetry dashboard featuring a live 60 FPS spinning rotor, **VGT Multi-Port Manifold meters**, **DNA Braided Helices 3D ribbon visualizer**, analog dials (RPM, Boost PSI, Pyrometer EGT, Learning Torque), and real-time interactive controls.
+7. **Zero-Dependency Native Execution**:
    Runs out-of-the-box using pure Python + NumPy (`PureNumPyMLP`), while providing seamless PyTorch integration via `PyTorchTurbineWrapper`.
 
 ---
@@ -186,16 +199,18 @@ AcceleratorAI/
 ├── accelerator_ai/
 │   ├── core/
 │   │   ├── flow_packet.py       # Fluid data medium (Pressure, Viscosity, Phase, Temp)
+│   │   ├── flow_port.py         # FlowPort & PortManifold (VGT Multi-Port & Venturi equations)
 │   │   ├── base_turbine.py      # Abstract TurbineModule lifecycle
-│   │   └── metrics.py           # Telemetry metrics (Torque, Pyrometer, Boost, AFR)
+│   │   ├── shaft.py             # Mechanical DriveShaft rotational Newton-Euler physics
+│   │   └── metrics.py           # Telemetry metrics (Torque, Pyrometer, Boost, AFR, VGT)
 │   ├── turbines/
 │   │   ├── intake.py            # Intake Turbine & laminar buffer
 │   │   ├── filter.py            # Robust Median/MAD outlier & NaN filter
-│   │   ├── compressor.py        # Compressor wheel & information pressure booster
+│   │   ├── compressor.py        # Compressor wheel & VGT multi-port intake manifold
 │   │   ├── intercooler.py       # Charge-air cooler & variance stabilizer
 │   │   ├── dispersion_valve.py  # SwirlDispersionValve (atomization & stratified swirl mixing)
-│   │   ├── combustion.py        # Combustion chamber (forward + loss ignition)
-│   │   ├── gradient_turbine.py  # Exhaust turbine harvesting backprop torque
+│   │   ├── combustion.py        # Combustion chamber (curriculum-weighted cross-entropy loss)
+│   │   ├── gradient_turbine.py  # Exhaust turbine harvesting curriculum-weighted backprop torque
 │   │   └── wastegate.py         # Pressure relief valve & gradient clipper
 │   ├── injectors/
 │   │   ├── base_injector.py     # Asynchronous phase-clock injector base
@@ -204,23 +219,24 @@ AcceleratorAI/
 │   │   └── shock.py             # Chaos Shock Injector ("kopniak z boku" / plateau buster)
 │   ├── ecu/
 │   │   ├── controller.py        # PID Boost Controller & thermal protector
-│   │   ├── braided_controller.py# DNA Plecionka 4-strand helical braided ECU
+│   │   ├── braided_controller.py# DNA Plecionka 4-strand helical braided ECU & aperture control
 │   │   └── telemetry.py         # Real-time event hub & telemetry logger
 │   ├── models/
-│   │   ├── neural_core.py       # Zero-dependency pure-NumPy neural model
+│   │   ├── neural_core.py       # Pure-NumPy neural model with curriculum sample weights
 │   │   └── torch_adapter.py     # PyTorch nn.Module wrapper bridge
-│   └── engine.py                # TurboLearningEngine unified orchestrator
+│   └── engine.py                # TurboLearningEngine unified closed-loop orchestrator
 ├── dashboard/
-│   ├── index.html               # Aerospace Turbine Cockpit web UI
+│   ├── index.html               # Aerospace Turbine Cockpit web UI (Gauges, DNA, VGT)
 │   ├── styles.css               # Cyber-mechanical dark theme & glassmorphic gauges
 │   ├── turbine_canvas.js        # 60 FPS Canvas rotor & oscilloscope animations
-│   └── cockpit.js               # Cockpit gauges, live SSE streaming & control handlers
+│   └── cockpit.js               # Cockpit gauges, live SSE streaming & VGT control handlers
 ├── examples/
 │   ├── demo_turbo_vs_standard.py# Benchmark comparing standard vs. turbo training
 │   └── live_cockpit_server.py   # Live server connecting Python engine to Cockpit UI
 ├── benchmarks/
 │   └── run_accelerator_benchmark.py # 4-pillar empirical benchmark suite
 ├── tests/
+│   ├── test_flow_ports.py       # Unit tests for FlowPort, PortManifold & Venturi dynamics
 │   ├── test_dispersion_valve.py # Unit tests for SwirlDispersionValve & atomization
 │   ├── test_turbines.py         # Unit tests for all turbine stages
 │   ├── test_injectors.py        # Unit tests for async injectors & shock triggers
@@ -241,7 +257,7 @@ Run the full automated test suite:
 python -m unittest discover -s tests -v
 ```
 
-All 23 test cases covering physical shaft dynamics, DNA Plecionka helical resonance, Swirl Dispersion atomization, fluid packet dynamics, async injectors, and ECU thermal cuts execute in < 0.05s.
+All 32 test cases covering physical shaft dynamics, VGT multi-port manifolds, Venturi curriculum weighting, DNA Plecionka helical resonance, Swirl Dispersion atomization, fluid packet dynamics, async injectors, and ECU thermal cuts execute in < 0.10s.
 
 ---
 

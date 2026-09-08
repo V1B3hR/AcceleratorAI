@@ -148,12 +148,25 @@ class BraidedDNAController:
                 # Re-align phases with an injection kick
                 self.phase_inj = (self.phase_grad + 0.5) % (2.0 * np.pi)
 
+        # 6. Variable Geometry Aperture Control Signals
+        # Dynamic port apertures driven by resonance state:
+        #   Constructive resonance (H > 0) → FOCUS: narrow hyper, narrow slow-mo
+        #   Destructive tension   (H < 0) → EXPLORE: widen hyper, widen slow-mo
+        #   Neutral               (H ≈ 0) → balanced defaults
+        h = self.resonance_index
+        aperture_signals = {
+            "hyper": float(np.clip(0.15 + 0.25 * max(0.0, -h), 0.05, 0.40)),
+            "cruise": 0.50,
+            "slowmo": float(np.clip(0.85 - 0.20 * max(0.0, h), 0.50, 0.95)),
+        }
+
         return {
             "learning_rate": round(self.current_learning_rate, 6),
             "resonance_index": round(self.resonance_index, 4),
             "phase_tension": round(self.phase_tension, 4),
             "winding_number": round(self.winding_number, 2),
             "should_phase_shock": should_phase_shock,
+            "aperture_signals": aperture_signals,
             "strands": {
                 "grad": {"val": round(self.val_grad, 3), "phase": round(self.phase_grad, 2)},
                 "press": {"val": round(self.val_press, 3), "phase": round(self.phase_press, 2)},
@@ -161,3 +174,4 @@ class BraidedDNAController:
                 "therm": {"val": round(self.val_therm, 3), "phase": round(self.phase_therm, 2)},
             },
         }
+
