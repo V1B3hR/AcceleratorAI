@@ -77,8 +77,8 @@ Crucially, it features **Asynchronous Multi-Point Injectors ("Wtryski Asynchroni
    Physical Newton-Euler rotational dynamics ($I \frac{d\omega}{dt} = \tau_{\text{in}} - \tau_{\text{load}} - \beta \omega$). Kinetic energy stored in the rotating shaft ($E_k = \frac{1}{2} I \omega^2$) physically drives the compressor wheel according to Euler's turbomachinery equation ($\Delta P \propto \omega^{1.5}$). Rotor RPM is a true internal dynamical state, not a heuristic.
 3. **DNA Plecionka (Braided Helical Control)**:
    Replaces top-down scalar PID loops with **4 interwoven physical strands** (Gradient, Pressure, Injection, Thermal) winding around each other. Cross-strand phase interference ($\mathcal{H} \in [-1, 1]$) is a primary feature: constructive resonance surges learning throughput, while destructive tension triggers creative phase bifurcation to bust local minima.
-4. **Asynchronous Multi-Point Injectors**:
-   Independent background injectors pulsing synthetic and edge-case batches with distinct phase offsets ($\Delta \phi_k$). When training plateaus, the **Chaos Shock Injector ("kopniak z boku")** delivers a sudden, non-linear entropy jolt that knocks the model out of local minima traps.
+4. **Asynchronous Multi-Point Injectors & Swirl Dispersion Valve**:
+   Independent background injectors pulsing synthetic and edge-case batches with distinct phase offsets ($\Delta \phi_k$). Eliminates crude batch concatenation by introducing the **Swirl Dispersion Valve (`SwirlDispersionValve`)**, which atomizes high-entropy perturbations into micro-droplet feature diffusion and toroidally interleaves discrete real-world edge packets across the cylinder charge. This prevents localized gradient knocking and maintains uniform flame front homogeneity ($H_{\text{dispersion}} > 90\%$). When training plateaus, the **Chaos Shock Injector ("kopniak z boku")** delivers a sudden entropy jolt that knocks the model out of local minima traps.
 5. **Interactive Turbine Cockpit**:
    A cyber-mechanical aerospace telemetry dashboard featuring a live 60 FPS spinning turbine rotor, **DNA Braided Helices 3D ribbon visualizer**, analog gauges (RPM, Boost PSI, Pyrometer EGT, Learning Torque), and real-time interactive controls.
 6. **Zero-Dependency Native Execution**:
@@ -193,6 +193,7 @@ AcceleratorAI/
 │   │   ├── filter.py            # Robust Median/MAD outlier & NaN filter
 │   │   ├── compressor.py        # Compressor wheel & information pressure booster
 │   │   ├── intercooler.py       # Charge-air cooler & variance stabilizer
+│   │   ├── dispersion_valve.py  # SwirlDispersionValve (atomization & stratified swirl mixing)
 │   │   ├── combustion.py        # Combustion chamber (forward + loss ignition)
 │   │   ├── gradient_turbine.py  # Exhaust turbine harvesting backprop torque
 │   │   └── wastegate.py         # Pressure relief valve & gradient clipper
@@ -203,6 +204,7 @@ AcceleratorAI/
 │   │   └── shock.py             # Chaos Shock Injector ("kopniak z boku" / plateau buster)
 │   ├── ecu/
 │   │   ├── controller.py        # PID Boost Controller & thermal protector
+│   │   ├── braided_controller.py# DNA Plecionka 4-strand helical braided ECU
 │   │   └── telemetry.py         # Real-time event hub & telemetry logger
 │   ├── models/
 │   │   ├── neural_core.py       # Zero-dependency pure-NumPy neural model
@@ -216,9 +218,13 @@ AcceleratorAI/
 ├── examples/
 │   ├── demo_turbo_vs_standard.py# Benchmark comparing standard vs. turbo training
 │   └── live_cockpit_server.py   # Live server connecting Python engine to Cockpit UI
+├── benchmarks/
+│   └── run_accelerator_benchmark.py # 4-pillar empirical benchmark suite
 ├── tests/
+│   ├── test_dispersion_valve.py # Unit tests for SwirlDispersionValve & atomization
 │   ├── test_turbines.py         # Unit tests for all turbine stages
 │   ├── test_injectors.py        # Unit tests for async injectors & shock triggers
+│   ├── test_shaft_and_braid.py  # Unit tests for physical drive shaft & DNA plecionka
 │   └── test_engine.py           # Unit tests for TurboLearningEngine & ECU
 └── docs/
     ├── ARCHITECTURE.md          # Full fluid mechanics & mathematical equations
@@ -235,7 +241,7 @@ Run the full automated test suite:
 python -m unittest discover -s tests -v
 ```
 
-All 14 test cases covering turbine stages, fluid packet merging/splitting, async injectors, plateau triggering, and ECU thermal cuts execute in < 0.1s.
+All 23 test cases covering physical shaft dynamics, DNA Plecionka helical resonance, Swirl Dispersion atomization, fluid packet dynamics, async injectors, and ECU thermal cuts execute in < 0.05s.
 
 ---
 

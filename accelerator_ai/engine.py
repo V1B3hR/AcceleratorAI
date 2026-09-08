@@ -217,6 +217,7 @@ class TurboLearningEngine:
             helical_resonance=float(braid_status["resonance_index"]),
             phase_tension=float(braid_status["phase_tension"]),
             winding_number=float(braid_status["winding_number"]),
+            homogeneity_pct=float(combustion_result.homogeneity_pct),
         )
         self.telemetry_hub.emit(telemetry)
 

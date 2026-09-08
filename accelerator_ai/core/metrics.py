@@ -31,6 +31,7 @@ class EngineTelemetry:
     helical_resonance: float = 0.0        # DNA Braided resonance index H in [-1.0, 1.0]
     phase_tension: float = 0.0            # Braided multi-strand tension (creative friction)
     winding_number: float = 0.0           # Helical winding revolutions
+    homogeneity_pct: float = 100.0        # Swirl dispersion & atomization homogeneity index (0 - 100%)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert telemetry to serialized dictionary for JSON / WebSocket streaming."""

@@ -5,6 +5,7 @@ from accelerator_ai.turbines.intercooler import Intercooler
 from accelerator_ai.turbines.combustion import CombustionChamber, CombustionResult
 from accelerator_ai.turbines.gradient_turbine import GradientTurbine
 from accelerator_ai.turbines.wastegate import WastegateValve
+from accelerator_ai.turbines.dispersion_valve import SwirlDispersionValve
 
 __all__ = [
     "IntakeTurbine",
@@ -15,4 +16,5 @@ __all__ = [
     "CombustionResult",
     "GradientTurbine",
     "WastegateValve",
+    "SwirlDispersionValve",
 ]
