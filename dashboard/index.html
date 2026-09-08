@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AcceleratorAI — VIBE Turbine Learning Cockpit</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="cockpit-body">
+  <!-- Top Navigation & System Status Bar -->
+  <header class="cockpit-header">
+    <div class="brand-section">
+      <div class="brand-logo-icon">
+        <span class="turbine-glyph">🌀</span>
+      </div>
+      <div class="brand-text">
+        <h1>ACCELERATOR<span>AI</span></h1>
+        <div class="system-tag">VIBE TURBINE DYNAMICS &bull; ASYNC MULTI-POINT INJECTION</div>
+      </div>
+    </div>
+
+    <div class="telemetry-pill-strip">
+      <div class="status-pill">
+        <span class="pill-label">ENGINE STATUS</span>
+        <span class="pill-value" id="engine-status-text">ONLINE (RUNNING)</span>
+        <span class="live-beacon"></span>
+      </div>
+      <div class="status-pill">
+        <span class="pill-label">ECU MODE</span>
+        <span class="pill-value highlight-cyan" id="ecu-mode-text">CLOSED-LOOP PID</span>
+      </div>
+      <div class="status-pill">
+        <span class="pill-label">TOTAL CYCLES</span>
+        <span class="pill-value font-mono" id="cycle-count">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Cockpit Grid -->
+  <main class="cockpit-grid">
+    <!-- Left Column: Turbine Rotor & Live Fluid Stage -->
+    <section class="panel turbine-stage-panel">
+      <div class="panel-header">
+        <h2><span class="panel-icon">⚙️</span> TURBINE CORE CHAMBER</h2>
+        <div class="panel-tag font-mono" id="impeller-rpm-tag">0 RPM</div>
+      </div>
+      <div class="rotor-viewport">
+        <canvas id="turbineCanvas" width="480" height="480"></canvas>
+        <div class="rotor-overlay-stats">
+          <div class="overlay-stat">
+            <span class="stat-name">MANIFOLD BOOST</span>
+            <span class="stat-val font-mono" id="overlay-boost">0.0 PSI</span>
+          </div>
+          <div class="overlay-stat">
+            <span class="stat-name">EXHAUST TEMP</span>
+            <span class="stat-val font-mono" id="overlay-temp">200 °C</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Control Action Bar -->
+      <div class="quick-actions">
+        <button id="btn-nos-shock" class="btn-chaos-shock">
+          <span class="btn-glow"></span>
+          <span class="btn-icon">⚡</span>
+          <span class="btn-title">INJECT CHAOS SHOCK</span>
+          <span class="btn-subtitle font-mono">("Kopniak z boku" / Plateau Buster)</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Center Column: Primary Gauges Cluster -->
+    <section class="panel gauges-cluster-panel">
+      <div class="panel-header">
+        <h2><span class="panel-icon">📊</span> PRIMARY FLUID DYNAMICS GAUGES</h2>
+        <span class="panel-tag">CALIBRATED ANALOG & DIGITAL</span>
+      </div>
+
+      <div class="gauges-grid">
+        <!-- Tachometer (RPM) -->
+        <div class="gauge-card">
+          <div class="gauge-title">LEARNING RPM</div>
+          <div class="gauge-wrapper">
+            <canvas id="gaugeRpmCanvas" width="180" height="180"></canvas>
+            <div class="gauge-digital font-mono" id="digital-rpm">0</div>
+          </div>
+          <div class="gauge-footer">CONVERGENCE SPEED</div>
+        </div>
+
+        <!-- Manifold Boost (PSI) -->
+        <div class="gauge-card">
+          <div class="gauge-title">MANIFOLD BOOST</div>
+          <div class="gauge-wrapper">
+            <canvas id="gaugeBoostCanvas" width="180" height="180"></canvas>
+            <div class="gauge-digital font-mono highlight-cyan" id="digital-boost">0.0 PSI</div>
+          </div>
+          <div class="gauge-footer">PRESSURE RATIO (Ψ)</div>
+        </div>
+
+        <!-- Pyrometer (EGT / Loss Heat) -->
+        <div class="gauge-card">
+          <div class="gauge-title">PYROMETER (EGT)</div>
+          <div class="gauge-wrapper">
+            <canvas id="gaugeTempCanvas" width="180" height="180"></canvas>
+            <div class="gauge-digital font-mono highlight-amber" id="digital-temp">200 °C</div>
+          </div>
+          <div class="gauge-footer">OVERFITTING THERMAL INDEX</div>
+        </div>
+
+        <!-- Learning Torque (Nm) -->
+        <div class="gauge-card">
+          <div class="gauge-title">LEARNING TORQUE</div>
+          <div class="gauge-wrapper">
+            <canvas id="gaugeTorqueCanvas" width="180" height="180"></canvas>
+            <div class="gauge-digital font-mono highlight-green" id="digital-torque">0.0 Nm</div>
+          </div>
+          <div class="gauge-footer">GRADIENT SHAFT WORK (τ)</div>
+        </div>
+      </div>
+
+      <!-- Secondary Fluid Telemetry Meters -->
+      <div class="fluid-meters-row">
+        <div class="meter-card">
+          <div class="meter-header">
+            <span>AIR-FUEL RATIO (AFR)</span>
+            <span class="font-mono" id="val-afr">14.7 : 1</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill afr-fill" id="bar-afr" style="width: 50%;"></div>
+          </div>
+        </div>
+
+        <div class="meter-card">
+          <div class="meter-header">
+            <span>WASTEGATE BLOW-OFF</span>
+            <span class="font-mono" id="val-wastegate">0.0%</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill wastegate-fill" id="bar-wastegate" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="meter-card">
+          <div class="meter-header">
+            <span>CURRENT LOSS CRITERION</span>
+            <span class="font-mono" id="val-loss">0.0000</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill loss-fill" id="bar-loss" style="width: 70%;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Asynchronous Multi-Point Injectors & ECU Controls -->
+    <section class="panel injectors-panel">
+      <div class="panel-header">
+        <h2><span class="panel-icon">💉</span> ASYNC MULTI-POINT INJECTORS</h2>
+        <span class="panel-tag highlight-purple">INDEPENDENT PHASE TIMING</span>
+      </div>
+
+      <!-- Injector Cards -->
+      <div class="injectors-list">
+        <!-- Injector 1: Synthetic -->
+        <div class="injector-card" id="card-inj-synth">
+          <div class="injector-header">
+            <div class="injector-name">
+              <span class="pulse-indicator" id="led-synth"></span>
+              <strong>INJ #1: SYNTHETIC</strong>
+            </div>
+            <span class="injector-badge font-mono">BOUNDARY MIX</span>
+          </div>
+          <div class="injector-telemetry font-mono">
+            <span>PHASE: <strong id="phase-synth">0.50 rad</strong></span>
+            <span>FREQ: <strong id="freq-synth">0.25 Hz</strong></span>
+            <span>FIRED: <strong id="count-synth">0</strong></span>
+          </div>
+        </div>
+
+        <!-- Injector 2: Real-World -->
+        <div class="injector-card" id="card-inj-real">
+          <div class="injector-header">
+            <div class="injector-name">
+              <span class="pulse-indicator" id="led-real"></span>
+              <strong>INJ #2: REAL-WORLD</strong>
+            </div>
+            <span class="injector-badge font-mono">HIGH VISCOSITY</span>
+          </div>
+          <div class="injector-telemetry font-mono">
+            <span>PHASE: <strong id="phase-real">1.80 rad</strong></span>
+            <span>FREQ: <strong id="freq-real">0.18 Hz</strong></span>
+            <span>FIRED: <strong id="count-real">0</strong></span>
+          </div>
+        </div>
+
+        <!-- Injector 3: Chaos Shock -->
+        <div class="injector-card shock-card" id="card-inj-shock">
+          <div class="injector-header">
+            <div class="injector-name">
+              <span class="pulse-indicator pulse-shock" id="led-shock"></span>
+              <strong>INJ #3: CHAOS SHOCK</strong>
+            </div>
+            <span class="injector-badge font-mono highlight-red">PLATEAU BUSTER</span>
+          </div>
+          <div class="injector-telemetry font-mono">
+            <span>PHASE: <strong id="phase-shock">3.14 rad</strong></span>
+            <span>TRIGGER: <strong id="trigger-shock">PLATEAU / MANUAL</strong></span>
+            <span>FIRED: <strong id="count-shock">0</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Oscilloscope / Phase Wave Diagram -->
+      <div class="phase-oscilloscope-container">
+        <div class="oscilloscope-label">
+          <span>ASYNC PHASE INTERFERENCE OSCILLOSCOPE</span>
+          <span class="font-mono">Δφ MISALIGNMENT</span>
+        </div>
+        <canvas id="oscilloscopeCanvas" width="380" height="100"></canvas>
+      </div>
+
+      <!-- ECU Tuning Controls -->
+      <div class="ecu-controls-section">
+        <h3>ECU CALIBRATION SLIDERS</h3>
+        <div class="control-row">
+          <label>TARGET BOOST: <span id="label-boost-target" class="font-mono">14.7 PSI</span></label>
+          <input type="range" id="slider-boost" min="0" max="25" step="0.5" value="14.7">
+        </div>
+        <div class="control-row">
+          <label>INJECTOR JITTER: <span id="label-jitter" class="font-mono">0.15</span></label>
+          <input type="range" id="slider-jitter" min="0.0" max="0.5" step="0.01" value="0.15">
+        </div>
+        <div class="control-row">
+          <label>WASTEGATE THRESHOLD: <span id="label-wastegate" class="font-mono">5.0 Norm</span></label>
+          <input type="range" id="slider-wastegate" min="1.0" max="10.0" step="0.5" value="5.0">
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Live Telemetry Terminal Strip -->
+  <footer class="cockpit-footer">
+    <div class="terminal-container">
+      <div class="terminal-bar">
+        <span class="terminal-title">REAL-TIME TURBINE TELEMETRY LOG</span>
+        <span class="terminal-mode font-mono">[STREAM: ACTIVE]</span>
+      </div>
+      <div class="terminal-stream font-mono" id="telemetry-log">
+        <div class="log-line text-cyan">[INIT] AcceleratorAI VIBE Turbine Learning Engine initialized.</div>
+        <div class="log-line text-green">[ECU] Multi-Point Asynchronous Injectors primed with phase offsets: Synth(0.50), Real(1.80), Shock(3.14).</div>
+        <div class="log-line text-yellow">[TURBO] Centrifugal compressor spooling up to idle 800 RPM. Manifold ready.</div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="turbine_canvas.js"></script>
+  <script src="cockpit.js"></script>
+</body>
+</html>

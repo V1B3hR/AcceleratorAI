@@ -1,0 +1,580 @@
+/* ==========================================================================
+   AcceleratorAI — VIBE Turbine Learning Cockpit Stylesheet
+   Theme: Aerospace Telemetry, Cyber-Mechanical Dark Mode, Glassmorphism
+   ========================================================================== */
+
+:root {
+  --bg-primary: #080a0f;
+  --bg-panel: rgba(14, 18, 26, 0.78);
+  --bg-panel-hover: rgba(20, 26, 38, 0.88);
+  --border-subtle: rgba(0, 240, 255, 0.12);
+  --border-active: rgba(0, 240, 255, 0.45);
+  
+  --color-cyan: #00f0ff;
+  --color-amber: #ff9d00;
+  --color-green: #00ff88;
+  --color-purple: #b026ff;
+  --color-red: #ff1e56;
+  --color-text-main: #e8ecf4;
+  --color-text-muted: #79869e;
+
+  --glow-cyan: 0 0 20px rgba(0, 240, 255, 0.35);
+  --glow-red: 0 0 25px rgba(255, 30, 86, 0.6);
+  --glow-green: 0 0 18px rgba(0, 255, 136, 0.4);
+
+  --font-display: 'Orbitron', -apple-system, sans-serif;
+  --font-ui: 'Rajdhani', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body.cockpit-body {
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.06) 0%, transparent 60%),
+    linear-gradient(to bottom, rgba(8, 10, 15, 0.95), rgba(4, 5, 8, 0.98)),
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.25) 2px, rgba(0, 0, 0, 0.25) 4px);
+  color: var(--color-text-main);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* Header Bar */
+.cockpit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 28px;
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-logo-icon {
+  width: 44px;
+  height: 44px;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.2) 0%, rgba(0, 0, 0, 0.5) 80%);
+  border: 1px solid var(--color-cyan);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  box-shadow: var(--glow-cyan);
+}
+
+.brand-text h1 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ffffff;
+}
+
+.brand-text h1 span {
+  color: var(--color-cyan);
+}
+
+.system-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: var(--color-text-muted);
+}
+
+.telemetry-pill-strip {
+  display: flex;
+  gap: 12px;
+}
+
+.status-pill {
+  background: rgba(18, 24, 36, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pill-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+}
+
+.pill-value {
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+
+.live-beacon {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-green);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--color-green);
+  animation: pulse-beacon 1.5s infinite;
+}
+
+@keyframes pulse-beacon {
+  0% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 0.4; transform: scale(0.9); }
+}
+
+/* Grid Layout */
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 1fr;
+  gap: 20px;
+  padding: 24px;
+  flex: 1;
+}
+
+/* Base Panel */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px;
+  backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.25s ease;
+}
+
+.panel:hover {
+  border-color: var(--border-active);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 12px;
+}
+
+.panel-header h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-muted);
+}
+
+/* Rotor Viewport */
+.rotor-viewport {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.07) 0%, rgba(5, 7, 10, 0.95) 75%);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  overflow: hidden;
+  height: 380px;
+}
+
+#turbineCanvas {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.rotor-overlay-stats {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  background: rgba(8, 11, 16, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 14px;
+  backdrop-filter: blur(8px);
+}
+
+.overlay-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-name {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+}
+
+.stat-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-cyan);
+}
+
+/* Chaos Shock Button */
+.quick-actions {
+  margin-top: auto;
+}
+
+.btn-chaos-shock {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #ff1e56 0%, #b0003a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--glow-red);
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.btn-chaos-shock:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 35px rgba(255, 30, 86, 0.85);
+}
+
+.btn-chaos-shock:active {
+  transform: translateY(1px);
+}
+
+.btn-chaos-shock .btn-icon {
+  font-size: 22px;
+  margin-bottom: 2px;
+}
+
+.btn-chaos-shock .btn-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.btn-chaos-shock .btn-subtitle {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+/* Gauges Grid */
+.gauges-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.gauge-card {
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.gauge-title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+
+.gauge-wrapper {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.gauge-wrapper canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.gauge-digital {
+  font-size: 18px;
+  font-weight: 800;
+  z-index: 2;
+  margin-top: 48px;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+}
+
+.gauge-footer {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+  margin-top: 6px;
+}
+
+/* Fluid Meters */
+.fluid-meters-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.meter-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meter-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  transition: width 0.25s ease;
+}
+
+.afr-fill { background: linear-gradient(90deg, var(--color-cyan), var(--color-green)); }
+.wastegate-fill { background: linear-gradient(90deg, var(--color-amber), var(--color-red)); }
+.loss-fill { background: linear-gradient(90deg, var(--color-green), var(--color-amber)); }
+
+/* Injectors List */
+.injectors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.injector-card {
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.injector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.injector-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.pulse-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #333d4f;
+  transition: background 0.1s ease, box-shadow 0.1s ease;
+}
+
+.pulse-indicator.pulsing {
+  background: var(--color-cyan);
+  box-shadow: 0 0 12px var(--color-cyan);
+}
+
+.pulse-shock.pulsing {
+  background: var(--color-red);
+  box-shadow: 0 0 16px var(--color-red);
+}
+
+.injector-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.injector-telemetry {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.injector-telemetry strong {
+  color: #fff;
+}
+
+/* Oscilloscope */
+.phase-oscilloscope-container {
+  background: rgba(6, 8, 12, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.oscilloscope-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+#oscilloscopeCanvas {
+  width: 100%;
+  height: 80px;
+  background: #040508;
+  border-radius: 4px;
+}
+
+/* ECU Controls */
+.ecu-controls-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.ecu-controls-section h3 {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--color-text-muted);
+}
+
+.control-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.control-row label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.control-row label span {
+  color: var(--color-cyan);
+}
+
+input[type="range"] {
+  accent-color: var(--color-cyan);
+  background: rgba(255, 255, 255, 0.1);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+
+/* Footer / Terminal */
+.cockpit-footer {
+  padding: 0 24px 20px 24px;
+}
+
+.terminal-container {
+  background: #04060a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.terminal-bar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.terminal-stream {
+  max-height: 80px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.log-line { line-height: 1.4; }
+.text-cyan { color: var(--color-cyan); }
+.text-green { color: var(--color-green); }
+.text-yellow { color: var(--color-amber); }
+.text-red { color: var(--color-red); }
+
+/* Highlights */
+.font-mono { font-family: var(--font-mono); }
+.highlight-cyan { color: var(--color-cyan) !important; }
+.highlight-amber { color: var(--color-amber) !important; }
+.highlight-green { color: var(--color-green) !important; }
+.highlight-purple { color: var(--color-purple) !important; }
+.highlight-red { color: var(--color-red) !important; }
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .cockpit-grid {
+    grid-template-columns: 1fr;
+  }
+}
