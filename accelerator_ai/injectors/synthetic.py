@@ -38,28 +38,30 @@ class SyntheticInjector(AsyncDataInjector):
         """
         Synthesizes novel samples by interpolating existing context or generating synthetic features.
         """
-        if context_packet is not None and context_packet.batch_size > 1:
+        if context_packet is not None and context_packet.batch_size >= 1:
             x_src = context_packet.x
             y_src = context_packet.y
             n_samples = min(self.batch_size, x_src.shape[0])
 
-            # Select two random permutation index vectors
-            idx1 = np.random.choice(x_src.shape[0], size=n_samples, replace=True)
-            idx2 = np.random.choice(x_src.shape[0], size=n_samples, replace=True)
-
-            # Draw beta-like convex weights
-            lam = np.random.beta(self.interpolation_alpha, self.interpolation_alpha, size=(n_samples, 1))
-            lam_y = lam if len(y_src.shape) > 1 else lam.squeeze(1)
-
-            synth_x = lam * x_src[idx1] + (1.0 - lam) * x_src[idx2]
-            synth_y = lam_y * y_src[idx1] + (1.0 - lam_y) * y_src[idx2]
+            if x_src.shape[0] > 1:
+                idx1 = np.random.choice(x_src.shape[0], size=n_samples, replace=True)
+                idx2 = np.random.choice(x_src.shape[0], size=n_samples, replace=True)
+                lam = np.random.beta(self.interpolation_alpha, self.interpolation_alpha, size=(n_samples, 1))
+                lam_y = lam if len(y_src.shape) > 1 else lam.squeeze(1)
+                synth_x = lam * x_src[idx1] + (1.0 - lam) * x_src[idx2]
+                synth_y = lam_y * y_src[idx1] + (1.0 - lam_y) * y_src[idx2]
+            else:
+                # Jitter single sample
+                noise = np.random.normal(0, 0.05, size=(n_samples, x_src.shape[1]))
+                synth_x = x_src[:1] + noise
+                synth_y = y_src[:1]
 
             pressure = float(context_packet.pressure * 1.25)
             temperature = float(context_packet.temperature * 1.15)
         else:
-            # Fallback random exploration manifold
-            synth_x = np.random.randn(self.batch_size, 10)
-            synth_y = np.random.randint(0, 2, size=(self.batch_size, 1)).astype(np.float32)
+            dim = context_packet.x.shape[1] if context_packet is not None and len(context_packet.x.shape) > 1 else 10
+            synth_x = np.random.randn(self.batch_size, dim)
+            synth_y = np.random.randint(0, 2, size=(self.batch_size,)).astype(np.int32)
             pressure = 1.2
             temperature = 1.3
 

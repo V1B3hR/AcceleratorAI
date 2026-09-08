@@ -44,9 +44,9 @@ class AsyncDataInjector(ABC):
     def step_clock(self, step: int) -> bool:
         """
         Advances the injector phase clock and evaluates if the nozzle fires on this step.
-        Firing condition: sin(frequency * step + phase + random_jitter) >= threshold.
+        Firing condition: step >= min_spool_steps and sin(frequency * step + phase + jitter) >= threshold.
         """
-        if not self.active:
+        if not self.active or step < 8:
             return False
 
         self.internal_clock = (self.pulse_frequency * step) + self.phase_offset

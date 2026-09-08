@@ -78,14 +78,14 @@ class TurboLearningEngine:
         self.legacy_ecu = BoostController(base_learning_rate=base_learning_rate)
         self.telemetry_hub = TelemetryHub()
 
-        # Asynchronous Multi-Point Injectors
+        # Asynchronous Multi-Point Injectors (Stoichiometric auxiliary fuel)
         self.injectors: List[AsyncDataInjector] = []
         if injectors:
             self.injectors.extend(injectors)
         elif enable_default_injectors:
-            self.injectors.append(SyntheticInjector())
-            self.injectors.append(RealWorldReservoirInjector())
-            self.injectors.append(EntropyShockInjector())
+            self.injectors.append(SyntheticInjector(batch_size=6))
+            self.injectors.append(RealWorldReservoirInjector(batch_size=6))
+            self.injectors.append(EntropyShockInjector(batch_size=4, threshold=0.85))
 
         # Reference to shock injector if present
         self.shock_injector: Optional[EntropyShockInjector] = next(

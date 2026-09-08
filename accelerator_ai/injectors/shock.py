@@ -103,8 +103,9 @@ class EntropyShockInjector(AsyncDataInjector):
             pressure = float(context_packet.pressure * 2.0)  # Extreme pressure kick
             temperature = float(context_packet.temperature * 2.2)  # Fiery combustion
         else:
-            shocked_x = np.random.randn(self.batch_size, 10) * 1.5
-            shocked_y = np.random.uniform(0.0, 1.0, size=(self.batch_size, 1))
+            dim = context_packet.x.shape[1] if context_packet is not None and len(context_packet.x.shape) > 1 else 10
+            shocked_x = np.random.randn(self.batch_size, dim) * 1.5
+            shocked_y = np.random.randint(0, 2, size=(self.batch_size,)).astype(np.int32)
             pressure = 2.0
             temperature = 2.5
             self.last_shock_intensity = 1.0

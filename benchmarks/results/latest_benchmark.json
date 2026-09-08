@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-09-08T06:55:34Z",
+  "acceleration_factor": {
+    "mean_epochs_baseline": 1.4,
+    "mean_epochs_turbo": 1.2,
+    "mean_epochs_full": 1.2,
+    "mean_acc_baseline": 68.93333333333334,
+    "mean_acc_turbo": 67.26666666666667,
+    "mean_acc_full": 72.79999999999998,
+    "af_full": 1.17
+  },
+  "data_efficiency": {
+    "fractions": [
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "baseline_accuracies": [
+      60.333333333333336,
+      65.33333333333333,
+      65.0,
+      61.33333333333333
+    ],
+    "full_accuracies": [
+      62.33333333333333,
+      64.66666666666666,
+      62.0,
+      62.66666666666667
+    ]
+  },
+  "trap_escape": {
+    "escape_rate_baseline": 100.0,
+    "escape_rate_turbo": 100.0,
+    "escape_rate_full": 100.0
+  },
+  "noise_robustness": {
+    "noise_levels": [
+      0.0,
+      0.1,
+      0.2,
+      0.35
+    ],
+    "baseline_accuracy": [
+      65.66666666666666,
+      65.0,
+      68.33333333333333,
+      64.66666666666666
+    ],
+    "full_accuracy": [
+      64.33333333333333,
+      63.66666666666667,
+      63.0,
+      65.66666666666666
+    ],
+    "mean_advantage": -1.75
+  },
+  "total_duration_s": 7.81
+}

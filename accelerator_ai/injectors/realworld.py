@@ -44,18 +44,27 @@ class RealWorldReservoirInjector(AsyncDataInjector):
         """
         Samples an asynchronous batch from the real-world reservoir.
         """
-        if self.reservoir_x is not None and len(self.reservoir_x) > 0:
+        has_valid_reservoir = (
+            self.reservoir_x is not None 
+            and len(self.reservoir_x) > 0
+            and (context_packet is None or self.reservoir_x.shape[1] == context_packet.x.shape[1])
+        )
+
+        if has_valid_reservoir:
             n = len(self.reservoir_x)
             indices = np.random.choice(n, size=min(self.batch_size, n), replace=False)
             x_batch = self.reservoir_x[indices]
             y_batch = self.reservoir_y[indices]
-        elif context_packet is not None:
-            # Fallback: slice from context packet if reservoir empty
-            x_batch = context_packet.x[: self.batch_size]
-            y_batch = context_packet.y[: self.batch_size]
+        elif context_packet is not None and context_packet.batch_size > 0:
+            # Fallback: slice from context packet if reservoir empty or dimension mismatched
+            n = context_packet.batch_size
+            indices = np.random.choice(n, size=min(self.batch_size, n), replace=True)
+            x_batch = context_packet.x[indices]
+            y_batch = context_packet.y[indices]
         else:
-            x_batch = np.zeros((self.batch_size, 10))
-            y_batch = np.zeros((self.batch_size, 1))
+            dim = context_packet.x.shape[1] if context_packet is not None and len(context_packet.x.shape) > 1 else 10
+            x_batch = np.zeros((self.batch_size, dim))
+            y_batch = np.zeros((self.batch_size,), dtype=np.int32)
 
         return FlowPacket(
             x=x_batch,

@@ -85,12 +85,18 @@ class PureNumPyMLP:
 
         # Compute Cross-Entropy Loss
         eps = 1e-9
-        if y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1):
-            y_indices = y.astype(int).ravel()
+        y_flat = y.ravel()
+        is_soft = np.issubdtype(y_flat.dtype, np.floating) and np.any((y_flat > 0.0) & (y_flat < 1.0))
+
+        if is_soft:
+            # Binary soft target cross entropy
+            p1 = probs[:, 1]
+            loss = -np.mean(y_flat * np.log(p1 + eps) + (1.0 - y_flat) * np.log(1.0 - p1 + eps))
+        elif y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1):
+            y_indices = np.round(y).astype(int).ravel()
             n = len(y_indices)
             loss = -np.mean(np.log(probs[np.arange(n), y_indices] + eps))
         else:
-            # One-hot or soft target labels
             loss = -np.mean(np.sum(y * np.log(probs + eps), axis=-1))
 
         return probs, float(loss)
@@ -102,8 +108,16 @@ class PureNumPyMLP:
         n = probs.shape[0]
 
         # Output gradient
-        if y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1):
-            y_indices = y.astype(int).ravel()
+        y_flat = y.ravel()
+        is_soft = np.issubdtype(y_flat.dtype, np.floating) and np.any((y_flat > 0.0) & (y_flat < 1.0))
+
+        if is_soft:
+            delta = probs.copy()
+            delta[:, 1] -= y_flat
+            delta[:, 0] -= (1.0 - y_flat)
+            delta /= n
+        elif y.ndim == 1 or (y.ndim == 2 and y.shape[1] == 1):
+            y_indices = np.round(y).astype(int).ravel()
             delta = probs.copy()
             delta[np.arange(n), y_indices] -= 1.0
             delta /= n
