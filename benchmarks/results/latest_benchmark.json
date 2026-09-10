@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-08T10:26:29Z",
+  "timestamp": "2026-09-10T07:33:58Z",
   "acceleration_factor": {
     "mean_epochs_baseline": 1.4,
     "mean_epochs_turbo": 1.2,
@@ -55,5 +55,5 @@
     ],
     "mean_advantage": -0.08
   },
-  "total_duration_s": 19.47
+  "total_duration_s": 9.71
 }

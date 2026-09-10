@@ -94,6 +94,64 @@ class TestTurbines(unittest.TestCase):
         self.assertLessEqual(clipped_norm, 0.01 + 1e-6)
         self.assertGreater(wastegate.open_pct, 0.0)
 
+    def test_air_filter_magnetic_and_ultrasonic_stages(self):
+        # 1. Magnetic Stage (Heavy Metal / Multivariate screening)
+        filter_mag = AirFilter(
+            outlier_std_threshold=10.0,      # High MAD threshold so 1D mesh lets it pass
+            enable_magnetic_stage=True,
+            magnetic_threshold_sigma=2.0,     # Tight magnetic trap
+            enable_ultrasonic_stage=True,
+            ultrasonic_clean_interval=5,
+        )
+        heavy_x = self.x.copy()
+        # Sample 0 has all dimensions elevated to 2.5 sigma: individually ok (<10.0),
+        # but joint multivariate distance exceeds 2.0 sigma threshold
+        heavy_x[0] = np.mean(heavy_x, axis=0) + 2.5 * np.std(heavy_x, axis=0)
+        # Ultrasonic duplication test: make sample 5 identical to sample 1
+        heavy_x[5] = heavy_x[1].copy()
+
+        packet = FlowPacket(x=heavy_x, y=self.y)
+        clean = filter_mag.process(packet)
+
+        # Verify magnetic trap caught the multi-feature anomaly
+        self.assertGreater(clean.metadata["magnetic_trapped"], 0)
+        # Verify ultrasonic sonication dispersed the identical duplicate
+        self.assertGreater(clean.metadata["sonicated_clusters"], 0)
+        self.assertFalse(np.allclose(clean.x[5], clean.x[1]))
+
+        # Piezo Self-Cleaning Pulse test
+        filter_mag.clog_level = 0.85
+        # Advance packet count to trigger clean interval
+        filter_mag.total_processed_packets = 4
+        clean2 = filter_mag.process(packet)
+        self.assertTrue(clean2.metadata["piezo_cleaned"])
+        self.assertLess(filter_mag.clog_level, 0.15)
+        self.assertGreaterEqual(filter_mag.efficiency, 0.95)
+
+    def test_combustion_knocking_and_wastegate_relief(self):
+        chamber = CombustionChamber(knock_energy_threshold=0.1)  # sensitive threshold
+        packet_high_p = FlowPacket(x=self.x, y=self.y, pressure=2.5)
+        res = chamber.ignite(packet_high_p, injected_packets=None, model=self.model)
+
+        self.assertGreater(res.information_density, 1.0)
+        self.assertTrue(res.knocking_detected)
+        self.assertGreater(res.exhaust_energy, 0.1)
+
+        # Wastegate knock relief
+        wastegate = WastegateValve(max_gradient_norm=10.0, max_exhaust_energy=0.1)
+        clipped_norm, was_vented = wastegate.inspect_and_regulate(
+            model=self.model,
+            gradient_norm=1.5,
+            boost_ratio=2.5,
+            exhaust_energy=res.exhaust_energy,
+            knocking_detected=res.knocking_detected,
+        )
+        self.assertTrue(was_vented)
+        self.assertGreaterEqual(wastegate.open_pct, 70.0)
+        self.assertEqual(wastegate.total_knock_mitigations, 1)
+        self.assertTrue(wastegate.last_telemetry["knock_mitigated"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

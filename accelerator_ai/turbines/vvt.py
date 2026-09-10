@@ -92,12 +92,14 @@ class VariableValveTiming:
         self.volumetric_efficiency = float(np.clip(0.60 + 0.45 * rpm_factor * wave_tuning * self.valve_lift, 0.40, 1.25))
 
         # 4. Dynamic Micro-Batch Sizing
-        # Batch size scales with volumetric efficiency and valve lift
-        # batch = base_batch * (0.6 + 0.8 * eta_v)
-        scaled_batch = self.base_batch_size * (0.50 + 0.65 * self.volumetric_efficiency)
+        # VVT can only GROW the batch (more volumetric efficiency = larger intake).
+        # Shrinking the batch increases gradient variance and harms convergence.
+        # batch = base_batch * (1.0 + 0.5 * max(0, eta_v - 0.85))
+        eta_bonus = max(0.0, self.volumetric_efficiency - 0.85)
+        scaled_batch = self.base_batch_size * (1.0 + 0.5 * eta_bonus)
         self.current_batch_size = int(np.clip(
             np.round(scaled_batch),
-            self.min_batch_size,
+            self.base_batch_size,  # Floor = base (never shrink)
             self.max_batch_size,
         ))
 
@@ -136,8 +138,25 @@ class VariableValveTiming:
         else:
             return "CONTINUOUS_CRUISE"
 
+    def state_dict(self) -> Dict[str, Any]:
+        """Serializes VVT state for checkpointing."""
+        return {
+            "cam_advance_deg": float(self.cam_advance_deg),
+            "valve_lift": float(self.valve_lift),
+            "volumetric_efficiency": float(self.volumetric_efficiency),
+            "current_batch_size": int(self.current_batch_size),
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Restores VVT state from checkpoint."""
+        self.cam_advance_deg = float(state_dict.get("cam_advance_deg", 0.0))
+        self.valve_lift = float(state_dict.get("valve_lift", 0.50))
+        self.volumetric_efficiency = float(state_dict.get("volumetric_efficiency", 0.85))
+        self.current_batch_size = int(state_dict.get("current_batch_size", self.base_batch_size))
+
     def __repr__(self) -> str:
         return (
             f"<VariableValveTiming(mode={self._get_vvt_mode()}, advance={self.cam_advance_deg:+.1f}°, "
             f"lift={self.valve_lift:.2f}, eta_v={self.volumetric_efficiency:.2f}, batch={self.current_batch_size})>"
         )
+

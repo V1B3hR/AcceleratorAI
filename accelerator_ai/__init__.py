@@ -25,17 +25,32 @@ from accelerator_ai.injectors.shock import EntropyShockInjector
 from accelerator_ai.ecu.controller import BoostController
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
 from accelerator_ai.ecu.telemetry import TelemetryHub
+from accelerator_ai.core.pipeline import (
+    FluidPipeline,
+    PipelineStage,
+    PipelineChain,
+    ExpressCoreRoundabout,
+    AuxiliaryInjectionRoundabout,
+    ResonantObservationRoundabout,
+)
 from accelerator_ai.models.neural_core import PureNumPyMLP
 from accelerator_ai.models.torch_adapter import PyTorchTurbineWrapper
 from accelerator_ai.engine import TurboLearningEngine
+from accelerator_ai.security import InputGuard, ValidationError, CorruptedTensorError
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "FlowPacket",
     "TurbineModule",
     "DriveShaft",
     "EngineTelemetry",
+    "FluidPipeline",
+    "PipelineStage",
+    "PipelineChain",
+    "ExpressCoreRoundabout",
+    "AuxiliaryInjectionRoundabout",
+    "ResonantObservationRoundabout",
     "IntakeTurbine",
     "AirFilter",
     "CompressorTurbine",
@@ -61,4 +76,7 @@ __all__ = [
     "PureNumPyMLP",
     "PyTorchTurbineWrapper",
     "TurboLearningEngine",
+    "InputGuard",
+    "ValidationError",
+    "CorruptedTensorError",
 ]

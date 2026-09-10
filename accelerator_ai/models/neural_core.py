@@ -3,7 +3,7 @@ NeuralCore: Zero-dependency, pure-NumPy multi-layer neural network with
 exact gradient tracking, gradient clipping, and momentum optimizer.
 """
 
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Optional
 import numpy as np
 
 
@@ -15,11 +15,11 @@ class PureNumPyMLP:
 
     def __init__(
         self,
-        layer_sizes: List[int] = [10, 32, 16, 2],
+        layer_sizes: Optional[List[int]] = None,
         activation: str = "tanh",
         momentum: float = 0.9,
     ):
-        self.layer_sizes = layer_sizes
+        self.layer_sizes = list(layer_sizes) if layer_sizes is not None else [10, 32, 16, 2]
         self.activation = activation
         self.momentum = momentum
 

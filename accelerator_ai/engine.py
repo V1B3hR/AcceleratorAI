@@ -8,6 +8,7 @@ BraidedDNAController into an integrated, dynamically closed fluid-learning loop.
 """
 
 from typing import List, Optional, Dict, Any, Tuple
+import logging
 import numpy as np
 
 from accelerator_ai.core.flow_packet import FlowPacket
@@ -29,15 +30,24 @@ from accelerator_ai.injectors.base_injector import AsyncDataInjector
 from accelerator_ai.injectors.synthetic import SyntheticInjector
 from accelerator_ai.injectors.realworld import RealWorldReservoirInjector
 from accelerator_ai.injectors.shock import EntropyShockInjector
-from accelerator_ai.ecu.controller import BoostController
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
 from accelerator_ai.ecu.telemetry import TelemetryHub
+from accelerator_ai.security.input_guard import InputGuard
+
+logger = logging.getLogger("accelerator_ai.engine")
+from accelerator_ai.core.pipeline import (
+    FluidPipeline,
+    ExpressCoreRoundabout,
+    AuxiliaryInjectionRoundabout,
+    ResonantObservationRoundabout,
+)
 
 
 class TurboLearningEngine:
     """
     Orchestrates the entire turbocharged AI learning cycle with physical shaft inertia,
     Braided DNA multi-strand control, Sequential Turbocharging (HP/LP), and Dynamic VVT.
+    Powered by the Vibe Multi-Tier FluidPipeline.
     """
 
     def __init__(
@@ -50,11 +60,16 @@ class TurboLearningEngine:
         injectors: Optional[List[AsyncDataInjector]] = None,
         enable_sequential_turbo: bool = True,
         enable_vvt: bool = True,
+        telemetry_interval: int = 1,
+        fault_tolerance_mode: bool = True,
+        input_guard: Optional[InputGuard] = None,
     ):
         self.model = model
         self.current_step: int = 0
         self.current_epoch: int = 0
         self.previous_loss: float = 1.0
+        self.fault_tolerance_mode = fault_tolerance_mode
+        self.input_guard = input_guard or InputGuard()
 
         # Physical Mechanical Drive Shaft
         self.shaft = DriveShaft(
@@ -63,7 +78,7 @@ class TurboLearningEngine:
             friction_coeff=0.012,
         )
 
-        # Core Turbines
+        # Core Turbines (Tier 0: Express Core Roundabout)
         self.intake = IntakeTurbine()
         self.filter = AirFilter()
         self.compressor = CompressorTurbine(shaft=self.shaft)
@@ -86,11 +101,9 @@ class TurboLearningEngine:
 
         # Braided DNA Helices Controller & Telemetry Hub
         self.braided_ecu = BraidedDNAController(base_learning_rate=base_learning_rate)
-        # Classic controller for backup telemetry/PID compatibility
-        self.legacy_ecu = BoostController(base_learning_rate=base_learning_rate)
         self.telemetry_hub = TelemetryHub()
 
-        # Asynchronous Multi-Point Injectors (Stoichiometric auxiliary fuel)
+        # Asynchronous Multi-Point Injectors (Tier 1: Auxiliary Injection Ring)
         self.injectors: List[AsyncDataInjector] = []
         if injectors:
             self.injectors.extend(injectors)
@@ -104,6 +117,32 @@ class TurboLearningEngine:
             (inj for inj in self.injectors if isinstance(inj, EntropyShockInjector)), None
         )
 
+        # Assemble the 3-Tier Roundabout Manifold (Vibe Flow Pipeline)
+        self.core_roundabout = ExpressCoreRoundabout(
+            intake=self.intake,
+            air_filter=self.filter,
+            compressor=self.compressor,
+            intercooler=self.intercooler,
+            combustion=self.combustion,
+            gradient_turbine=self.gradient_turbine,
+            wastegate=self.wastegate,
+        )
+        self.injection_roundabout = AuxiliaryInjectionRoundabout(injectors=self.injectors)
+        self.observation_roundabout = ResonantObservationRoundabout(
+            shaft=self.shaft,
+            braided_ecu=self.braided_ecu,
+            sequential_turbo=self.sequential_turbo,
+            vvt=self.vvt,
+        )
+
+        self.pipeline = FluidPipeline(
+            core_roundabout=self.core_roundabout,
+            injection_roundabout=self.injection_roundabout,
+            observation_roundabout=self.observation_roundabout,
+            telemetry_hub=self.telemetry_hub,
+            telemetry_interval=telemetry_interval,
+        )
+
     @property
     def virtual_rpm(self) -> float:
         """True physical shaft RPM."""
@@ -111,181 +150,81 @@ class TurboLearningEngine:
 
     def trigger_nos(self) -> None:
         """Triggers an immediate high-entropy chaos kick from the shock injector."""
-        if self.shock_injector:
-            self.shock_injector.trigger_manual_shock()
+        self.injection_roundabout.trigger_nos()
 
     def step(self, x_batch: np.ndarray, y_batch: np.ndarray) -> CombustionResult:
         """
-        Executes a single physically closed turbocharged learning cycle.
+        Executes a single physically closed turbocharged learning cycle via FluidPipeline.
+        Protected by InputGuard and FaultTolerance bypass mode.
         """
         self.current_step += 1
+        clean_x, clean_y = self.input_guard.sanitize(x_batch, y_batch)
 
-        # 0. Variable Valve Timing (VVT) Phasing & Dynamic Intake Window Slicing
-        vvt_telemetry = {}
-        if self.vvt is not None:
-            dyn_batch, vvt_telemetry = self.vvt.update(
-                shaft_rpm=self.shaft.rpm,
-                boost_psi=self.compressor.boost_psi,
-                resonance_index=self.braided_ecu.resonance_index,
+        try:
+            res = self.pipeline.flow_step(
+                x_batch=clean_x,
+                y_batch=clean_y,
+                model=self.model,
+                step_index=self.current_step,
+                epoch_index=self.current_epoch,
             )
-            x_intake, y_intake = self.vvt.slice_batch(x_batch, y_batch)
-        else:
-            x_intake, y_intake = x_batch, y_batch
-
-        # 1. Intake Stage: Ingest and regulate laminar flow
-        raw_packet = self.intake.ingest_raw(x_intake, y_intake)
-
-        # 2. Air Filter Stage: Clean out NaNs and outlier particles
-        clean_packet = self.filter.process(raw_packet)
-
-        # 3. Compressor Stage: Boost pressure ratio is directly driven by physical shaft RPM
-        compressed_packet = self.compressor.process(clean_packet)
-
-        # 4. Intercooler Stage: Thermal normalization and cooling
-        cooled_packet = self.intercooler.process(compressed_packet)
-
-        # 5. Asynchronous Multi-Point Injections:
-        # Check independent phase clocks and collect supplemental fuel packets
-        injected_packets: List[FlowPacket] = []
-        injected_entropy = 0.0
-
-        for inj in self.injectors:
-            pulse_packet = inj.pulse(self.current_step, context_packet=cooled_packet)
-            if pulse_packet is not None:
-                injected_packets.append(pulse_packet)
-                injected_entropy += float(pulse_packet.temperature * pulse_packet.batch_size)
-
-        # 6. Combustion Chamber: Mix fuel, forward pass, ignite loss
-        combustion_result = self.combustion.ignite(
-            main_packet=cooled_packet,
-            injected_packets=injected_packets,
-            model=self.model,
-        )
-        loss = combustion_result.loss
-
-        # Inform shock injector of loss for plateau detection
-        if self.shock_injector:
-            self.shock_injector.record_loss(loss)
-
-        # 7. Gradient Turbine: Harvest gradient norm and extract driving torque (Twin-Scroll divided)
-        grad_norm, learning_torque = self.gradient_turbine.harvest_gradients(
-            model=self.model,
-            fused_packet=combustion_result.fused_packet,
-            boost_ratio=self.compressor.boost_ratio,
-        )
-
-        # 8. Wastegate Inspection: Vent pressure and clip gradients if over-boost detected
-        clipped_norm, was_vented = self.wastegate.inspect_and_regulate(
-            model=self.model,
-            gradient_norm=grad_norm,
-            boost_ratio=self.compressor.boost_ratio,
-        )
-
-        # 9. Physical Drive Shaft Dynamic Integration:
-        # Driving torque from Gradient Turbine accelerates shaft;
-        # Reaction load from Compressor decelerates shaft;
-        # Bearing drag dissipates energy.
-        compressor_load = self.compressor.compute_reaction_load()
-        self.shaft.step(
-            torque_in=learning_torque,
-            load_torque=compressor_load,
-            dt=0.08,
-        )
-
-        # 9b. Sequential Turbocharger System Update:
-        # Evaluates HP low-inertia spooling and LP compound transition
-        seq_telemetry = {}
-        if self.sequential_turbo is not None:
-            _, seq_telemetry = self.sequential_turbo.update(
-                learning_torque=learning_torque,
-                shaft_rpm=self.shaft.rpm,
-                dt=0.08,
+            self.previous_loss = res.loss
+            return res
+        except Exception as e:
+            if not self.fault_tolerance_mode:
+                raise
+            logger.warning(
+                "TurboLearningEngine step %d encountered exception: %s. Executing graceful bypass step.",
+                self.current_step,
+                e,
+                exc_info=False,
+            )
+            # Graceful degradation fallback: direct execution to keep cluster training alive
+            predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
+            self.model.backward()
+            self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+            self.previous_loss = float(loss)
+            fallback_packet = FlowPacket(x=clean_x, y=clean_y, pressure=1.0)
+            return CombustionResult(
+                loss=float(loss),
+                predictions=predictions,
+                fused_packet=fallback_packet,
+                exhaust_energy=float(loss),
+                air_fuel_ratio=14.7,
+                homogeneity_pct=100.0,
             )
 
-        # 10. Thermal & Pyrometer Calculation
-        pyrometer_temp = calculate_pyrometer_temp(loss=loss)
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Serializes full engine physical dynamics, shaft kinetics, and ECU state.
+        Allows seamless resumption from training checkpoints.
+        """
+        return {
+            "version": "0.5.0",
+            "current_step": self.current_step,
+            "current_epoch": self.current_epoch,
+            "previous_loss": float(self.previous_loss),
+            "shaft": self.shaft.state_dict(),
+            "braided_ecu": self.braided_ecu.state_dict(),
+            "filter": self.filter.state_dict(),
+            "vvt": self.vvt.state_dict() if self.vvt else None,
+        }
 
-        # 11. Braided DNA Helices Control Cycle:
-        # Weaves Gradient Strand, Pressure Strand, Injection Strand, and Thermal Strand.
-        braid_status = self.braided_ecu.update(
-            step=self.current_step,
-            learning_torque=learning_torque,
-            boost_ratio=self.compressor.boost_ratio,
-            injected_entropy=injected_entropy,
-            pyrometer_temp=pyrometer_temp,
-            loss=loss,
-        )
-
-        # If prolonged phase desynchronization tension occurred, trigger a phase symmetry break
-        if braid_status["should_phase_shock"]:
-            self.trigger_nos()
-
-        # 11b. Variable Geometry Aperture Control:
-        # BraidedDNA emits aperture_signals; smoothly adjust compressor inlet ports
-        aperture_signals = braid_status.get("aperture_signals", {})
-        for port in self.compressor.inlet_manifold.ports:
-            target = aperture_signals.get(port.mode, None)
-            if target is not None:
-                port.adjust_towards(target, speed=0.12)
-
-        # 12. Drive Shaft: Apply weight updates using Braided ECU-tuned learning rate
-        self.model.apply_updates(learning_rate=braid_status["learning_rate"])
-
-        # Adapt injector dynamics based on whether loss improved
-        reward = 1.0 if loss < self.previous_loss else -0.5
-        for inj in self.injectors:
-            inj.adapt_dynamics(reward)
-
-        self.previous_loss = loss
-
-        # 13. Telemetry Dispatch
-        # Collect VGT port state
-        hyper_port = self.compressor.inlet_manifold.get_port("hyper")
-        cruise_port = self.compressor.inlet_manifold.get_port("cruise")
-        slowmo_port = self.compressor.inlet_manifold.get_port("slowmo")
-        curriculum_weights = combustion_result.fused_packet.metadata.get("curriculum_weights", None)
-
-        telemetry = EngineTelemetry(
-            step=self.current_step,
-            epoch=self.current_epoch,
-            rpm=float(self.shaft.rpm),
-            boost_psi=float(self.compressor.boost_psi),
-            manifold_pressure=float(self.compressor.boost_ratio),
-            pyrometer_temp_c=float(pyrometer_temp),
-            loss=float(loss),
-            learning_torque_nm=float(learning_torque),
-            compressor_load_nm=float(compressor_load),
-            shaft_kinetic_energy_j=float(self.shaft.kinetic_energy),
-            angular_accel_rad_s2=float(self.shaft.last_angular_accel),
-            wastegate_open_pct=float(self.wastegate.open_pct),
-            air_fuel_ratio=float(combustion_result.air_fuel_ratio),
-            injected_entropy=float(injected_entropy),
-            active_injectors=len(injected_packets),
-            learning_rate=float(braid_status["learning_rate"]),
-            helical_resonance=float(braid_status["resonance_index"]),
-            phase_tension=float(braid_status["phase_tension"]),
-            winding_number=float(braid_status["winding_number"]),
-            homogeneity_pct=float(combustion_result.homogeneity_pct),
-            hyper_flow_aperture=float(hyper_port.aperture) if hyper_port else 0.15,
-            cruise_flow_aperture=float(cruise_port.aperture) if cruise_port else 0.50,
-            slowmo_flow_aperture=float(slowmo_port.aperture) if slowmo_port else 0.85,
-            hyper_flow_pct=float(
-                (hyper_port.last_routed_count / max(1, cooled_packet.batch_size)) * 100.0
-            ) if hyper_port else 0.0,
-            curriculum_weight_mean=float(np.mean(curriculum_weights)) if curriculum_weights is not None else 1.0,
-            sequential_stage=str(seq_telemetry.get("sequential_stage", "HP_PRIMARY")),
-            transition_valve_pct=float(seq_telemetry.get("transition_valve_pct", 0.0)),
-            hp_rpm=float(seq_telemetry.get("hp_rpm", 1200.0)),
-            lp_rpm=float(seq_telemetry.get("lp_rpm", 600.0)),
-            cam_advance_deg=float(vvt_telemetry.get("cam_advance_deg", 0.0)),
-            valve_lift=float(vvt_telemetry.get("valve_lift", 0.50)),
-            volumetric_efficiency=float(vvt_telemetry.get("volumetric_efficiency", 0.85)),
-            twin_scroll_balance=float(self.gradient_turbine.twin_scroll.pulse_balance) if self.gradient_turbine.twin_scroll else 1.0,
-        )
-        self.telemetry_hub.emit(telemetry)
-
-        return combustion_result
-
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Restores engine state from a checkpoint state_dict.
+        """
+        self.current_step = int(state_dict.get("current_step", 0))
+        self.current_epoch = int(state_dict.get("current_epoch", 0))
+        self.previous_loss = float(state_dict.get("previous_loss", 1.0))
+        if "shaft" in state_dict and state_dict["shaft"] is not None:
+            self.shaft.load_state_dict(state_dict["shaft"])
+        if "braided_ecu" in state_dict and state_dict["braided_ecu"] is not None:
+            self.braided_ecu.load_state_dict(state_dict["braided_ecu"])
+        if "filter" in state_dict and state_dict["filter"] is not None:
+            self.filter.load_state_dict(state_dict["filter"])
+        if "vvt" in state_dict and self.vvt and state_dict["vvt"] is not None:
+            self.vvt.load_state_dict(state_dict["vvt"])
 
     def train_epoch(
         self,
@@ -308,3 +247,4 @@ class TurboLearningEngine:
             epoch_losses.append(res.loss)
 
         return epoch_losses
+

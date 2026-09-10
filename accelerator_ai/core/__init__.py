@@ -6,6 +6,14 @@ from accelerator_ai.core.metrics import (
     calculate_learning_torque,
     calculate_pyrometer_temp,
 )
+from accelerator_ai.core.pipeline import (
+    FluidPipeline,
+    PipelineStage,
+    PipelineChain,
+    ExpressCoreRoundabout,
+    AuxiliaryInjectionRoundabout,
+    ResonantObservationRoundabout,
+)
 
 __all__ = [
     "FlowPacket",
@@ -14,4 +22,10 @@ __all__ = [
     "EngineTelemetry",
     "calculate_learning_torque",
     "calculate_pyrometer_temp",
+    "FluidPipeline",
+    "PipelineStage",
+    "PipelineChain",
+    "ExpressCoreRoundabout",
+    "AuxiliaryInjectionRoundabout",
+    "ResonantObservationRoundabout",
 ]

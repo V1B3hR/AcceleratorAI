@@ -102,8 +102,27 @@ class DriveShaft:
             "total_revolutions": round(self.total_revolutions, 1),
         }
 
+    def state_dict(self) -> Dict[str, Any]:
+        """Serializes drive shaft physical dynamics for checkpointing."""
+        return {
+            "omega": float(self.omega),
+            "last_torque_in": float(self.last_torque_in),
+            "last_load_torque": float(self.last_load_torque),
+            "last_angular_accel": float(self.last_angular_accel),
+            "total_revolutions": float(self.total_revolutions),
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Restores drive shaft physical state from checkpoint."""
+        self.omega = float(state_dict.get("omega", self.idle_omega))
+        self.last_torque_in = float(state_dict.get("last_torque_in", 0.0))
+        self.last_load_torque = float(state_dict.get("last_load_torque", 0.0))
+        self.last_angular_accel = float(state_dict.get("last_angular_accel", 0.0))
+        self.total_revolutions = float(state_dict.get("total_revolutions", 0.0))
+
     def __repr__(self) -> str:
         return (
             f"<DriveShaft(rpm={self.rpm:.1f}, inertia={self.inertia}, "
             f"Ek={self.kinetic_energy:.1f}J)>"
         )
+

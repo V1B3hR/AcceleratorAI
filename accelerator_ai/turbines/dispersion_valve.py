@@ -138,30 +138,23 @@ class SwirlDispersionValve(TurbineModule):
             n_disc = len(disc_x)
 
             if self.stratified_swirl:
-                # Toroidal swirl interleaving: evenly space discrete samples throughout batch
-                # instead of lumping them all at the end
+                # Toroidal swirl interleaving: vectorized non-blocking distribution
                 total_size = n_main + n_disc
-                interleaved_x = np.zeros((total_size, x_main.shape[1]), dtype=x_main.dtype)
-                interleaved_y = np.zeros(total_size, dtype=y_main.dtype)
-
-                # Interleave cadence
                 step_interval = max(1, total_size // (n_disc + 1))
-                disc_idx = 0
-                main_idx = 0
 
-                for i in range(total_size):
-                    if (i % step_interval == 0) and (disc_idx < n_disc):
-                        interleaved_x[i] = disc_x[disc_idx]
-                        interleaved_y[i] = disc_y[disc_idx]
-                        disc_idx += 1
-                    elif main_idx < n_main:
-                        interleaved_x[i] = x_main[main_idx]
-                        interleaved_y[i] = y_main[main_idx]
-                        main_idx += 1
-                    else:
-                        interleaved_x[i] = disc_x[disc_idx]
-                        interleaved_y[i] = disc_y[disc_idx]
-                        disc_idx += 1
+                # Vectorized slot assignment without python loops
+                disc_target_indices = np.arange(0, total_size, step_interval)[:n_disc]
+                disc_mask = np.zeros(total_size, dtype=bool)
+                disc_mask[disc_target_indices] = True
+                main_mask = ~disc_mask
+
+                interleaved_x = np.empty((total_size, x_main.shape[1]), dtype=x_main.dtype)
+                interleaved_y = np.empty(total_size, dtype=y_main.dtype)
+
+                interleaved_x[disc_mask] = disc_x[:len(disc_target_indices)]
+                interleaved_y[disc_mask] = disc_y[:len(disc_target_indices)]
+                interleaved_x[main_mask] = x_main[:np.sum(main_mask)]
+                interleaved_y[main_mask] = y_main[:np.sum(main_mask)]
 
                 final_x = interleaved_x
                 final_y = interleaved_y

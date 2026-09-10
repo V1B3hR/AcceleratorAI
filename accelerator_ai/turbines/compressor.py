@@ -34,7 +34,7 @@ class CompressorTurbine(TurbineModule):
         self,
         base_boost_ratio: float = 1.0,
         max_boost_psi: float = 28.0,
-        enable_augmentation: bool = True,
+        enable_augmentation: bool = False,
         augmentation_factor: float = 0.05,
         shaft: Optional[DriveShaft] = None,
         pressure_coefficient: float = 0.45,

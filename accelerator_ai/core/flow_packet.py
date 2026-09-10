@@ -78,11 +78,58 @@ class FlowPacket:
         )
         return p1, p2
 
+    @property
+    def is_torch(self) -> bool:
+        """Returns True if the underlying data is a PyTorch Tensor."""
+        return "torch" in type(self.x).__module__
+
+    def to_numpy(self) -> "FlowPacket":
+        """Ensures underlying tensors are NumPy ndarrays (zero-copy if already NumPy)."""
+        if not self.is_torch:
+            return self
+        new_x = self.x.detach().cpu().numpy()
+        new_y = self.y.detach().cpu().numpy()
+        return FlowPacket(
+            x=new_x,
+            y=new_y,
+            pressure=self.pressure,
+            viscosity=self.viscosity,
+            temperature=self.temperature,
+            phase=self.phase,
+            source=self.source,
+            metadata=self.metadata.copy(),
+        )
+
+    def to_torch(self, device: Optional[Any] = None) -> "FlowPacket":
+        """Converts underlying arrays to PyTorch Tensors on target device."""
+        if self.is_torch:
+            if device is not None:
+                self.x = self.x.to(device)
+                self.y = self.y.to(device)
+            return self
+        import torch
+        new_x = torch.from_numpy(self.x)
+        new_y = torch.from_numpy(self.y)
+        if device is not None:
+            new_x = new_x.to(device)
+            new_y = new_y.to(device)
+        return FlowPacket(
+            x=new_x,
+            y=new_y,
+            pressure=self.pressure,
+            viscosity=self.viscosity,
+            temperature=self.temperature,
+            phase=self.phase,
+            source=self.source,
+            metadata=self.metadata.copy(),
+        )
+
     @classmethod
     def merge(cls, packets: list["FlowPacket"], source_tag: str = "fused") -> "FlowPacket":
         """
         Blends multiple flow packets into a unified fluid stream.
         Pressure and temperature are mass-weighted averages.
+        Backend-aware (handles both NumPy and PyTorch tensors natively).
         """
         valid_packets = [p for p in packets if p is not None and p.batch_size > 0]
         if not valid_packets:
@@ -92,8 +139,16 @@ class FlowPacket:
         xs = [p.x for p in valid_packets]
         ys = [p.y for p in valid_packets]
 
-        merged_x = np.concatenate(xs, axis=0)
-        merged_y = np.concatenate(ys, axis=0)
+        is_any_torch = any(p.is_torch for p in valid_packets)
+        if is_any_torch:
+            import torch
+            torch_xs = [t if "torch" in type(t).__module__ else torch.from_numpy(t) for t in xs]
+            torch_ys = [t if "torch" in type(t).__module__ else torch.from_numpy(t) for t in ys]
+            merged_x = torch.cat(torch_xs, dim=0)
+            merged_y = torch.cat(torch_ys, dim=0)
+        else:
+            merged_x = np.concatenate(xs, axis=0)
+            merged_y = np.concatenate(ys, axis=0)
 
         # Mass-weighted pressure and temperature
         weighted_pressure = sum(p.pressure * p.batch_size for p in valid_packets) / total_samples

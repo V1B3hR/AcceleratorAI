@@ -24,8 +24,9 @@ class AsyncDataInjector(ABC):
         phase_offset: float = 0.0,       # Phase shift delta_phi (in radians)
         pulse_frequency: float = 0.3,     # Base oscillation frequency
         jitter: float = 0.15,             # Stochastic timing jitter
-        threshold: float = 0.6,           # Firing threshold on the oscillation wave
+        threshold: float = 0.92,          # Firing threshold — high = rare, precise firings
         batch_size: int = 16,
+        cooldown_steps: int = 20,         # Minimum steps between firings
     ):
         self.name = name
         self.phase_offset = phase_offset
@@ -33,6 +34,7 @@ class AsyncDataInjector(ABC):
         self.jitter = jitter
         self.threshold = threshold
         self.batch_size = batch_size
+        self.cooldown_steps = cooldown_steps
 
         self.internal_clock: float = 0.0
         self.total_injections: int = 0
@@ -44,9 +46,14 @@ class AsyncDataInjector(ABC):
     def step_clock(self, step: int) -> bool:
         """
         Advances the injector phase clock and evaluates if the nozzle fires on this step.
-        Firing condition: step >= min_spool_steps and sin(frequency * step + phase + jitter) >= threshold.
+        Firing condition: step >= min_spool_steps AND cooldown elapsed
+                          AND sin(frequency * step + phase + jitter) >= threshold.
         """
         if not self.active or step < 8:
+            return False
+
+        # Cooldown enforcement: minimum gap between firings
+        if self.last_fired_step >= 0 and (step - self.last_fired_step) < self.cooldown_steps:
             return False
 
         self.internal_clock = (self.pulse_frequency * step) + self.phase_offset

@@ -21,6 +21,8 @@ class CombustionResult:
         exhaust_energy: float,
         air_fuel_ratio: float,
         homogeneity_pct: float = 100.0,
+        information_density: float = 1.0,
+        knocking_detected: bool = False,
     ):
         self.loss = loss
         self.predictions = predictions
@@ -28,6 +30,8 @@ class CombustionResult:
         self.exhaust_energy = exhaust_energy
         self.air_fuel_ratio = air_fuel_ratio
         self.homogeneity_pct = homogeneity_pct
+        self.information_density = information_density
+        self.knocking_detected = knocking_detected
 
 
 class CombustionChamber(TurbineModule):
@@ -38,10 +42,16 @@ class CombustionChamber(TurbineModule):
     achieving a homogeneous flame front without gradient knocking.
     """
 
-    def __init__(self, stoichiometric_ratio: float = 14.7, dispersion_valve: Optional[SwirlDispersionValve] = None):
+    def __init__(
+        self,
+        stoichiometric_ratio: float = 14.7,
+        dispersion_valve: Optional[SwirlDispersionValve] = None,
+        knock_energy_threshold: float = 8.0,
+    ):
         super().__init__(name="CombustionChamber")
         self.stoichiometric_ratio = stoichiometric_ratio
         self.dispersion_valve = dispersion_valve or SwirlDispersionValve()
+        self.knock_energy_threshold = knock_energy_threshold
         self.ignition_count: int = 0
         self.cumulative_exhaust_energy: float = 0.0
 
@@ -84,12 +94,22 @@ class CombustionChamber(TurbineModule):
         self.total_processed_packets += 1 + (len(injected_packets) if injected_packets else 0)
         self.total_processed_samples += fused.batch_size
 
+        # Information Density: Combines manifold pressure with charge homogeneity
+        information_density = float(fused.pressure * (homogeneity / 100.0))
+        fused.metadata["information_density"] = information_density
+
+        # Knocking / Detonation check (extreme explosive energy spike)
+        knocking = bool(exhaust_energy > self.knock_energy_threshold)
+        fused.metadata["knocking_detected"] = knocking
+
         # Spin chamber crank
         self.spin(delta_rpm=15.0)
 
         self.last_telemetry = {
             "combustion_loss": round(float(loss), 4),
             "exhaust_energy": round(exhaust_energy, 4),
+            "information_density": round(information_density, 3),
+            "knocking_detected": knocking,
             "air_fuel_ratio": round(afr, 2),
             "injected_samples": injected_sample_count,
             "total_mixture_samples": fused.batch_size,
@@ -103,4 +123,6 @@ class CombustionChamber(TurbineModule):
             exhaust_energy=exhaust_energy,
             air_fuel_ratio=afr,
             homogeneity_pct=homogeneity,
+            information_density=information_density,
+            knocking_detected=knocking,
         )
