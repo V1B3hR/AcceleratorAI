@@ -128,6 +128,30 @@ class TestTurbines(unittest.TestCase):
         self.assertLess(filter_mag.clog_level, 0.15)
         self.assertGreaterEqual(filter_mag.efficiency, 0.95)
 
+    def test_air_filter_large_batch_and_pressure_coupling(self):
+        """Tests O(B) fast screening on B=128 and Information Pressure threshold relaxation."""
+        filter_large = AirFilter(
+            enable_ultrasonic_stage=True,
+            ultrasonic_dedup_threshold=0.98,
+            ultrasonic_stride=1,
+        )
+        x_large = np.random.randn(128, 8).astype(np.float32)
+        y_large = np.random.randint(0, 2, size=(128, 1)).astype(np.float32)
+        # Duplicate sample 10 into sample 11
+        x_large[11] = x_large[10].copy()
+
+        # Standard pressure (1.0)
+        p_std = FlowPacket(x=x_large.copy(), y=y_large.copy(), pressure=1.0)
+        clean_std = filter_large.process(p_std)
+        self.assertEqual(clean_std.metadata["ultrasonic_threshold"], 0.98)
+        self.assertGreater(clean_std.metadata["sonicated_clusters"], 0)
+
+        # High pressure (2.5) -> should relax threshold
+        p_high = FlowPacket(x=x_large.copy(), y=y_large.copy(), pressure=2.5)
+        clean_high = filter_large.process(p_high)
+        self.assertGreater(clean_high.metadata["ultrasonic_threshold"], 0.98)
+
+
     def test_combustion_knocking_and_wastegate_relief(self):
         chamber = CombustionChamber(knock_energy_threshold=0.1)  # sensitive threshold
         packet_high_p = FlowPacket(x=self.x, y=self.y, pressure=2.5)

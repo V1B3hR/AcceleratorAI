@@ -44,6 +44,7 @@ class EngineTelemetry:
     cam_advance_deg: float = 0.0          # VVT Camshaft advance angle (-30° to +45°)
     valve_lift: float = 0.50              # VVT Intake valve lift fraction (0.25 - 1.00)
     volumetric_efficiency: float = 0.85   # VVT Volumetric efficiency eta_v
+    vvt_gear: int = 2                     # Discrete gearbox selection (Gear 1, 2, 3)
     twin_scroll_balance: float = 1.0      # Twin-Scroll exhaust pulse balance (Scroll A / (A+B))
 
     def to_dict(self) -> Dict[str, Any]:

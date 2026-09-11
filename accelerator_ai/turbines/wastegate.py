@@ -23,11 +23,13 @@ class WastegateValve(TurbineModule):
         max_gradient_norm: float = 5.0,
         cracking_pressure_ratio: float = 2.5,
         max_exhaust_energy: float = 8.0,
+        enable_soft_clipping: bool = True,
     ):
         super().__init__(name="WastegateValve")
         self.max_gradient_norm = max_gradient_norm
         self.cracking_pressure_ratio = cracking_pressure_ratio
         self.max_exhaust_energy = max_exhaust_energy
+        self.enable_soft_clipping = enable_soft_clipping
         self.open_pct: float = 0.0
         self.total_relief_events: int = 0
         self.total_knock_mitigations: int = 0
@@ -46,13 +48,20 @@ class WastegateValve(TurbineModule):
     ) -> Tuple[float, bool]:
         """
         Inspects gradient magnitude, manifold pressure, and combustion exhaust energy.
-        If exceeding safety thresholds or knocking is detected, clips gradients and opens wastegate.
+        If exceeding safety thresholds or knocking is detected, relieves pressure via
+        pneumatic soft-clipping or emergency venting.
         
         Returns:
             (clipped_gradient_norm, was_vented)
         """
         was_vented = False
         knock_event = knocking_detected or (exhaust_energy is not None and exhaust_energy > self.max_exhaust_energy)
+
+        def apply_clipping(target_norm: float) -> float:
+            if self.enable_soft_clipping and hasattr(model, "soft_clip_gradients"):
+                return float(model.soft_clip_gradients(threshold=target_norm))
+            model.clip_gradients(max_norm=target_norm)
+            return min(gradient_norm, target_norm)
 
         # 1. Combustion Knocking / Detonation Relief (Priority Emergency Gate)
         if knock_event:
@@ -63,8 +72,7 @@ class WastegateValve(TurbineModule):
             self.open_pct = min(100.0, 70.0 + knock_excess * 15.0)
             # Conservatively clip gradients to damp the shockwave
             conservative_norm = min(gradient_norm, self.max_gradient_norm * 0.8)
-            model.clip_gradients(max_norm=conservative_norm)
-            clipped_norm = conservative_norm
+            clipped_norm = apply_clipping(conservative_norm)
             was_vented = True
 
         # 2. Gradient over-boost check
@@ -72,9 +80,7 @@ class WastegateValve(TurbineModule):
             excess = gradient_norm - self.max_gradient_norm
             # Calculate valve opening percentage
             self.open_pct = min(100.0, (excess / self.max_gradient_norm) * 100.0)
-            # Clip gradients in the model
-            model.clip_gradients(max_norm=self.max_gradient_norm)
-            clipped_norm = self.max_gradient_norm
+            clipped_norm = apply_clipping(self.max_gradient_norm)
             self.total_relief_events += 1
             was_vented = True
 
@@ -93,5 +99,6 @@ class WastegateValve(TurbineModule):
             "total_relief_events": self.total_relief_events,
             "total_knock_mitigations": self.total_knock_mitigations,
             "clipped_norm": round(clipped_norm, 5),
+            "soft_clipping_active": self.enable_soft_clipping,
         }
         return clipped_norm, was_vented

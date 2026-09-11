@@ -30,6 +30,7 @@ class AirFilter(TurbineModule):
         enable_ultrasonic_stage: bool = True,
         ultrasonic_dedup_threshold: float = 0.98,
         ultrasonic_clean_interval: int = 50,
+        ultrasonic_stride: int = 5,
     ):
         super().__init__(name="AirFilter")
         self.outlier_std_threshold = outlier_std_threshold
@@ -40,6 +41,7 @@ class AirFilter(TurbineModule):
         self.enable_ultrasonic_stage = enable_ultrasonic_stage
         self.ultrasonic_dedup_threshold = ultrasonic_dedup_threshold
         self.ultrasonic_clean_interval = ultrasonic_clean_interval
+        self.ultrasonic_stride = max(1, ultrasonic_stride)
         self.clog_level: float = 0.0  # 0.0 (clean) to 1.0 (clogged)
 
     def process(self, packet: FlowPacket) -> FlowPacket:
@@ -105,22 +107,66 @@ class AirFilter(TurbineModule):
         # Stage 3: Ultrasonic Sonication (De-clustering & Piezo Self-Cleaning)
         # =====================================================================
         sonicated_clusters = 0
-        if self.enable_ultrasonic_stage and n_samples > 1:
-            # A. Batch De-duplication: check pairwise sample similarity to break clumping
+        effective_threshold = self.ultrasonic_dedup_threshold
+        psi = float(getattr(packet, "pressure", 1.0))
+
+        # Dynamic sensitivity coupling with Information Pressure Psi:
+        # High pressure indicates rich, novel informational entropy;
+        # dynamically loosen dedup threshold so rare support vectors are preserved.
+        if psi > 1.0:
+            pressure_relief = min(0.018, (psi - 1.0) * 0.01)
+            effective_threshold = min(0.999, self.ultrasonic_dedup_threshold + pressure_relief)
+
+        # Strided screening: execute acoustic checks every N packets or when pressure surges
+        should_run_ultrasonic = (
+            self.enable_ultrasonic_stage
+            and (n_samples > 1)
+            and (
+                (self.total_processed_packets % self.ultrasonic_stride == 0)
+                or (psi >= 2.0)
+            )
+        )
+
+        if should_run_ultrasonic:
             norms = np.linalg.norm(filtered_x, axis=1, keepdims=True) + 1e-7
             normalized_x = filtered_x / norms
-            sim_matrix = np.dot(normalized_x, normalized_x.T)
-            # Zero out diagonal and lower triangle
-            np.fill_diagonal(sim_matrix, 0.0)
-            tri_upper = np.triu(sim_matrix, k=1)
-            high_sim_pairs = np.where(tri_upper > self.ultrasonic_dedup_threshold)
 
-            if len(high_sim_pairs[0]) > 0:
-                sonicated_clusters = len(high_sim_pairs[0])
-                # Acoustic micro-dispersion: disperse duplicated samples
-                for j in np.unique(high_sim_pairs[1]):
-                    harmonic_dispersion = np.sin(np.arange(filtered_x.shape[1])) * (0.01 * scale[0])
-                    filtered_x[j] += harmonic_dispersion
+            if n_samples <= 64:
+                # Direct vectorized pairwise cosine matrix for small batches
+                sim_matrix = np.dot(normalized_x, normalized_x.T)
+                np.fill_diagonal(sim_matrix, 0.0)
+                tri_upper = np.triu(sim_matrix, k=1)
+                high_sim_pairs = np.where(tri_upper > effective_threshold)
+                if len(high_sim_pairs[0]) > 0:
+                    sonicated_clusters = len(high_sim_pairs[0])
+                    for j in np.unique(high_sim_pairs[1]):
+                        harmonic_dispersion = np.sin(np.arange(filtered_x.shape[1])) * (0.01 * scale[0])
+                        filtered_x[j] += harmonic_dispersion
+            else:
+                # O(B log B) Strided Random-Projection Screening for large batches (B > 64)
+                # Prevents massive O(B^2) pairwise quadratic explosion
+                rng = np.random.RandomState(42)
+                proj_vec = rng.randn(normalized_x.shape[1])
+                proj_vec /= (np.linalg.norm(proj_vec) + 1e-7)
+                projections = np.dot(normalized_x, proj_vec)
+                sorted_idx = np.argsort(projections)
+
+                candidate_dups = []
+                window = 3
+                for i in range(len(sorted_idx) - 1):
+                    orig_i = sorted_idx[i]
+                    for w in range(1, min(window + 1, len(sorted_idx) - i)):
+                        orig_j = sorted_idx[i + w]
+                        cos_sim = float(np.dot(normalized_x[orig_i], normalized_x[orig_j]))
+                        if cos_sim > effective_threshold:
+                            candidate_dups.append(orig_j)
+
+                if candidate_dups:
+                    unique_dups = np.unique(candidate_dups)
+                    sonicated_clusters = len(unique_dups)
+                    for j in unique_dups:
+                        harmonic_dispersion = np.sin(np.arange(filtered_x.shape[1])) * (0.01 * scale[0])
+                        filtered_x[j] += harmonic_dispersion
 
         # B. Piezo Self-Cleaning Pulse (Sonoclean)
         # Cleans trapped particulates before filter efficiency drops permanently
@@ -143,6 +189,7 @@ class AirFilter(TurbineModule):
         packet.metadata["magnetic_trapped"] = magnetic_trapped
         packet.metadata["sonicated_clusters"] = sonicated_clusters
         packet.metadata["piezo_cleaned"] = piezo_cleaned
+        packet.metadata["ultrasonic_threshold"] = round(effective_threshold, 4)
 
         self.last_telemetry = {
             "clog_level": round(self.clog_level, 4),
@@ -151,6 +198,7 @@ class AirFilter(TurbineModule):
             "magnetic_trapped": magnetic_trapped,
             "sonicated_clusters": sonicated_clusters,
             "piezo_cleaned": piezo_cleaned,
+            "ultrasonic_threshold": round(effective_threshold, 4),
         }
         return packet
 

@@ -22,14 +22,14 @@ Physics & ML Analogy:
       gradient averaging, and maximizes throughput when the shaft is spinning at peak RPM.
 """
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import numpy as np
 
 
 class VariableValveTiming:
     """
-    Camshaft phaser and intake valve lift controller.
-    Dynamically adjusts volumetric efficiency and micro-batch window sizing.
+    Camshaft phaser, intake valve lift controller, and Discrete Gearbox ("Skrzynia Biegów").
+    Dynamically adjusts volumetric efficiency and micro-batch window sizing across 3 static gears.
     """
 
     def __init__(
@@ -39,6 +39,7 @@ class VariableValveTiming:
         max_batch_size: int = 64,
         max_advance_deg: float = 45.0,
         max_retard_deg: float = -30.0,
+        gears: Optional[Tuple[int, ...]] = None,
     ):
         self.base_batch_size = base_batch_size
         self.min_batch_size = min_batch_size
@@ -46,11 +47,21 @@ class VariableValveTiming:
         self.max_advance_deg = max_advance_deg
         self.max_retard_deg = max_retard_deg
 
+        # 3 Discrete Pre-Allocated Gears (Skrzynia Biegów)
+        # Prevents constant CUDA Graph invalidations and PyTorch compile JIT recompilations
+        if gears is not None:
+            self.gears = tuple(sorted(list(set(gears))))
+        else:
+            self.gears = tuple(sorted(list(set([min_batch_size, base_batch_size, max_batch_size]))))
+
         # Valve state
         self.cam_advance_deg: float = 0.0     # Camshaft advance angle (-30° to +45°)
         self.valve_lift: float = 0.50          # Valve lift height fraction (0.20 to 1.00)
         self.volumetric_efficiency: float = 0.85 # eta_v (0.40 to 1.30)
-        self.current_batch_size: int = base_batch_size
+
+        # Gear state: default to cruise gear (Gear 2 if 3 gears available)
+        self.current_gear: int = 2 if len(self.gears) >= 2 else 1
+        self.current_batch_size: int = self.gears[min(self.current_gear - 1, len(self.gears) - 1)]
 
     def update(
         self,
@@ -59,7 +70,7 @@ class VariableValveTiming:
         resonance_index: float = 0.0,
     ) -> Tuple[int, Dict[str, Any]]:
         """
-        Dynamically calculates optimal camshaft angle, valve lift, and micro-batch size.
+        Dynamically calculates optimal camshaft angle, valve lift, and discrete gearbox selection.
 
         Args:
             shaft_rpm: Current DriveShaft RPM.
@@ -67,7 +78,7 @@ class VariableValveTiming:
             resonance_index: Helical resonance H from BraidedDNAController.
 
         Returns:
-            Tuple of (dynamic_micro_batch_size, vvt_telemetry_dict).
+            Tuple of (discrete_micro_batch_size, vvt_telemetry_dict).
         """
         # 1. Camshaft Phasing Calculation
         # Low RPM (< 1500) -> Retard cam (-15° to -5°) for rapid exhaust gas scavenging
@@ -91,42 +102,46 @@ class VariableValveTiming:
         wave_tuning = np.cos(cam_norm * (np.pi / 3.0))
         self.volumetric_efficiency = float(np.clip(0.60 + 0.45 * rpm_factor * wave_tuning * self.valve_lift, 0.40, 1.25))
 
-        # 4. Dynamic Micro-Batch Sizing
-        # VVT can only GROW the batch (more volumetric efficiency = larger intake).
-        # Shrinking the batch increases gradient variance and harms convergence.
-        # batch = base_batch * (1.0 + 0.5 * max(0, eta_v - 0.85))
-        eta_bonus = max(0.0, self.volumetric_efficiency - 0.85)
-        scaled_batch = self.base_batch_size * (1.0 + 0.5 * eta_bonus)
-        self.current_batch_size = int(np.clip(
-            np.round(scaled_batch),
-            self.base_batch_size,  # Floor = base (never shrink)
-            self.max_batch_size,
-        ))
+        # 4. Discrete Gearbox Selection (Skrzynia Biegów)
+        # Selects one of 3 static pre-allocated gears to avoid CUDA graph breaks:
+        # - Gear 1 (Low RPM / Spooling): small batch for fast low-inertia gradient response
+        # - Gear 2 (Cruising RPM): nominal base batch size
+        # - Gear 3 (High RPM / VTEC Peak Boost): wide batch for stable high-power averaging
+        if shaft_rpm < 1400.0:
+            gear_idx = 0
+        elif shaft_rpm >= 3000.0 and self.volumetric_efficiency >= 0.85:
+            gear_idx = len(self.gears) - 1
+        else:
+            gear_idx = 1 if len(self.gears) >= 3 else 0
+
+        self.current_gear = gear_idx + 1
+        self.current_batch_size = self.gears[gear_idx]
 
         telemetry = {
             "cam_advance_deg": round(self.cam_advance_deg, 2),
             "valve_lift": round(self.valve_lift, 3),
             "volumetric_efficiency": round(self.volumetric_efficiency, 3),
             "vvt_batch_size": self.current_batch_size,
+            "vvt_gear": self.current_gear,
             "vvt_mode": self._get_vvt_mode(),
         }
         return self.current_batch_size, telemetry
 
     def slice_batch(self, x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Slices an incoming batch to the dynamic micro-batch size determined by VVT.
-        If the incoming batch is smaller than requested, repeats or preserves it.
+        Slices an incoming batch to the discrete gearbox micro-batch size.
+        Uses contiguous zero-copy slicing (x[:target_n]) to prevent memory allocations
+        in CUDA Graph / torch.compile execution.
         """
         target_n = self.current_batch_size
         n = len(x)
         if n == target_n:
             return x, y
         elif n > target_n:
-            # Stochastically sub-sample or slice the leading window
-            indices = np.random.choice(n, size=target_n, replace=False)
-            return x[indices], y[indices]
+            # Contiguous zero-copy slice for pre-allocated static graph buffers
+            return x[:target_n], y[:target_n]
         else:
-            # Over-sample / repeat with replacement if incoming batch is smaller
+            # Repeat / oversample if incoming batch is smaller than current gear
             indices = np.random.choice(n, size=target_n, replace=True)
             return x[indices], y[indices]
 
@@ -145,6 +160,7 @@ class VariableValveTiming:
             "valve_lift": float(self.valve_lift),
             "volumetric_efficiency": float(self.volumetric_efficiency),
             "current_batch_size": int(self.current_batch_size),
+            "current_gear": int(self.current_gear),
         }
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -153,10 +169,12 @@ class VariableValveTiming:
         self.valve_lift = float(state_dict.get("valve_lift", 0.50))
         self.volumetric_efficiency = float(state_dict.get("volumetric_efficiency", 0.85))
         self.current_batch_size = int(state_dict.get("current_batch_size", self.base_batch_size))
+        self.current_gear = int(state_dict.get("current_gear", 2))
 
     def __repr__(self) -> str:
         return (
-            f"<VariableValveTiming(mode={self._get_vvt_mode()}, advance={self.cam_advance_deg:+.1f}°, "
-            f"lift={self.valve_lift:.2f}, eta_v={self.volumetric_efficiency:.2f}, batch={self.current_batch_size})>"
+            f"<VariableValveTiming(gear={self.current_gear}/{len(self.gears)}, mode={self._get_vvt_mode()}, "
+            f"advance={self.cam_advance_deg:+.1f}°, lift={self.valve_lift:.2f}, "
+            f"eta_v={self.volumetric_efficiency:.2f}, batch={self.current_batch_size})>"
         )
 

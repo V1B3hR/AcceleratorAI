@@ -173,7 +173,7 @@ class PureNumPyMLP:
         return float(np.sqrt(total_sq_norm))
 
     def clip_gradients(self, max_norm: float) -> None:
-        """Wastegate clipping: rescales gradients if total norm exceeds threshold."""
+        """Wastegate hard clipping: rescales gradients if total norm exceeds threshold."""
         total_sq = sum(
             np.sum(gw ** 2) + np.sum(gb ** 2)
             for gw, gb in zip(self.grad_weights, self.grad_biases)
@@ -184,6 +184,25 @@ class PureNumPyMLP:
             for i in range(len(self.grad_weights)):
                 self.grad_weights[i] *= scale
                 self.grad_biases[i] *= scale
+
+    def soft_clip_gradients(self, threshold: float) -> float:
+        """
+        Pneumatic soft-clipping: scales gradients smoothly via tanh:
+            g_tilde = g * tanh(threshold / ||g||)
+        Continuous pressure bleeding eliminates step discontinuities on weights.
+        """
+        total_sq = sum(
+            np.sum(gw ** 2) + np.sum(gb ** 2)
+            for gw, gb in zip(self.grad_weights, self.grad_biases)
+        )
+        total_norm = float(np.sqrt(total_sq))
+        if total_norm > 1e-8 and threshold > 0.0:
+            scale = float(np.tanh(threshold / total_norm))
+            for i in range(len(self.grad_weights)):
+                self.grad_weights[i] *= scale
+                self.grad_biases[i] *= scale
+            return total_norm * scale
+        return total_norm
 
     def apply_updates(self, learning_rate: float) -> None:
         """Drive Shaft parameter update with momentum."""

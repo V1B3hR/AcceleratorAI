@@ -400,8 +400,13 @@ class FluidPipeline:
         self.injection.adapt(loss_improved=(loss < self.previous_loss))
         self.previous_loss = loss
 
-        # --- Telemetry Emission (Decoupled sampling support) ---
-        if self.current_step % self.telemetry_interval == 0:
+        # --- Telemetry Emission (Decoupled sampling + safety override) ---
+        should_emit = (
+            (self.current_step % self.telemetry_interval == 0)
+            or (self.current_step == 0)
+            or (self.core.wastegate.open_pct > 0.0)
+        )
+        if should_emit:
             self._emit_telemetry(
                 step=self.current_step,
                 epoch=epoch_index,
@@ -478,6 +483,7 @@ class FluidPipeline:
             cam_advance_deg=float(vvt_telemetry.get("cam_advance_deg", 0.0)),
             valve_lift=float(vvt_telemetry.get("valve_lift", 0.50)),
             volumetric_efficiency=float(vvt_telemetry.get("volumetric_efficiency", 0.85)),
+            vvt_gear=int(vvt_telemetry.get("vvt_gear", 2)),
             twin_scroll_balance=float(self.core.gradient_turbine.twin_scroll.pulse_balance) if self.core.gradient_turbine.twin_scroll else 1.0,
         )
         self.telemetry_hub.emit(telemetry)

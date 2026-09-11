@@ -136,6 +136,35 @@ class TestSequentialAndVVT(unittest.TestCase):
         self.assertTrue(hasattr(latest, "volumetric_efficiency"))
         self.assertTrue(hasattr(latest, "twin_scroll_balance"))
 
+    def test_vvt_discrete_gearbox_and_zero_copy(self):
+        """Tests that VVT only selects from discrete gears (16, 32, 64) and uses zero-copy slicing."""
+        vvt = VariableValveTiming(base_batch_size=32, min_batch_size=16, max_batch_size=64)
+        self.assertEqual(vvt.gears, (16, 32, 64))
+
+        # Gear 1: Low RPM spooling
+        b1, tel1 = vvt.update(shaft_rpm=1000.0, boost_psi=0.0)
+        self.assertEqual(b1, 16)
+        self.assertEqual(tel1["vvt_gear"], 1)
+
+        # Gear 2: Cruise
+        b2, tel2 = vvt.update(shaft_rpm=2000.0, boost_psi=5.0)
+        self.assertEqual(b2, 32)
+        self.assertEqual(tel2["vvt_gear"], 2)
+
+        # Gear 3: Peak boost & VTEC
+        b3, tel3 = vvt.update(shaft_rpm=4200.0, boost_psi=20.0, resonance_index=0.5)
+        self.assertEqual(b3, 64)
+        self.assertEqual(tel3["vvt_gear"], 3)
+
+        # Zero-copy slice test: check slice points to same memory
+        x_large = np.arange(640, dtype=np.float32).reshape(64, 10)
+        y_large = np.zeros((64,), dtype=np.int32)
+        vvt.current_batch_size = 32
+        x_slice, y_slice = vvt.slice_batch(x_large, y_large)
+        self.assertEqual(len(x_slice), 32)
+        self.assertTrue(np.shares_memory(x_large, x_slice))  # Validates zero-copy view!
+
 
 if __name__ == "__main__":
     unittest.main()
+

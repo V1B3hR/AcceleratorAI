@@ -63,6 +63,31 @@ class TestInjectors(unittest.TestCase):
         fired = shock_inj.step_clock(step=1)
         self.assertTrue(fired)
 
+    def test_annealed_shock_scheduling(self):
+        """Tests that noise amplitude decays with loss and suppresses late-stage noise."""
+        shock_inj = EntropyShockInjector(
+            base_noise_scale=0.35,
+            min_scale_ratio=0.08,
+            loss_threshold=0.15,
+            threshold=0.5,
+        )
+
+        # High loss (0.50): full amplitude shock
+        shock_inj.record_loss(0.50)
+        fuel_high = shock_inj.generate_fuel(self.context_packet)
+        self.assertAlmostEqual(fuel_high.metadata["annealed_noise_scale"], 0.35, places=2)
+
+        # Low loss (0.005): annealed down to minimum scale floor
+        shock_inj.record_loss(0.005)
+        fuel_low = shock_inj.generate_fuel(self.context_packet)
+        self.assertLess(fuel_low.metadata["annealed_noise_scale"], 0.05)
+        self.assertAlmostEqual(fuel_low.metadata["annealed_noise_scale"], 0.35 * 0.08, places=3)
+
+        # Periodic background wave suppressed when loss is low (<= 0.08)
+        fired_when_converged = shock_inj.step_clock(step=20)
+        self.assertFalse(fired_when_converged)
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -104,23 +104,40 @@ class PyTorchTurbineWrapper:
         return pred_np, loss_val
 
     def backward(self) -> float:
-        """Runs loss.backward() and computes total parameter gradient L2 norm."""
+        """Runs loss.backward() and computes total parameter gradient L2 norm with zero intermediate device syncs."""
         if self.last_loss_tensor is None:
             return 0.0
 
         self.last_loss_tensor.backward()
 
-        total_sq = 0.0
-        for p in self.model.parameters():
-            if p.grad is not None:
-                param_sq = p.grad.detach().data.norm(2).item() ** 2
-                total_sq += param_sq
+        grads = [p.grad.detach() for p in self.model.parameters() if p.grad is not None]
+        if not grads:
+            return 0.0
 
-        return float(np.sqrt(total_sq))
+        # Vectorized on-device sum of squares (single PCIe sync instead of N-parameter syncs)
+        total_sq = sum(g.data.norm(2).square() for g in grads)
+        return float(self.torch.sqrt(total_sq).item())
 
     def clip_gradients(self, max_norm: float) -> None:
-        """Wastegate gradient clipping."""
+        """Wastegate hard gradient clipping."""
         self.torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_norm)
+
+    def soft_clip_gradients(self, threshold: float) -> float:
+        """Pneumatic soft-clipping via smooth tanh scaling with single on-device reduction."""
+        grads = [p.grad.detach() for p in self.model.parameters() if p.grad is not None]
+        if not grads or threshold <= 0.0:
+            return 0.0
+
+        total_sq = sum(g.data.norm(2).square() for g in grads)
+        total_norm_t = self.torch.sqrt(total_sq)
+        total_norm = float(total_norm_t.item())
+
+        if total_norm > 1e-8:
+            scale = float(self.torch.tanh(threshold / total_norm_t).item())
+            for g in grads:
+                g.mul_(scale)
+            return total_norm * scale
+        return total_norm
 
     def apply_updates(self, learning_rate: float) -> None:
         """Drive Shaft parameter update."""
