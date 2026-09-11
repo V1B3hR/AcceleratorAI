@@ -77,6 +77,19 @@ class TestInputGuard(unittest.TestCase):
         self.assertEqual(health["features"], 8)
         self.assertFalse(health["has_nans"])
 
+    def test_torch_tensor_and_integer_sequence(self):
+        """Tests that torch.Tensor on CUDA/CPU and integer token IDs are preserved."""
+        import torch
+        guard = InputGuard(expected_features=16)
+        x_tok = torch.randint(0, 1000, (8, 16), dtype=torch.long)
+        y_tok = torch.randint(0, 1000, (8, 16), dtype=torch.long)
+
+        clean_x, clean_y = guard.sanitize(x_tok, y_tok)
+        self.assertTrue(isinstance(clean_x, torch.Tensor))
+        self.assertEqual(clean_x.dtype, torch.long)
+        self.assertEqual(clean_x.shape, (8, 16))
+
 
 if __name__ == "__main__":
     unittest.main()
+

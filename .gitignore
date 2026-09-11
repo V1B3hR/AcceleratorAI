@@ -47,3 +47,4 @@ htmlcov/
 # AcceleratorAI checkpoints & telemetry dumps
 checkpoints/
 telemetry_dumps/
+data/

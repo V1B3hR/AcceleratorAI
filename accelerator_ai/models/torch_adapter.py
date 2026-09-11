@@ -22,7 +22,7 @@ class PyTorchTurbineWrapper:
         self,
         model: Any,
         optimizer: Any,
-        loss_fn: Any,
+        loss_fn: Optional[Any] = None,
         enable_layer_hooks: bool = False,
     ):
         try:
@@ -60,48 +60,100 @@ class PyTorchTurbineWrapper:
 
     def forward_and_loss(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
-        sample_weights: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, float]:
+        x: Any,
+        y: Any,
+        sample_weights: Optional[Any] = None,
+        return_numpy_preds: bool = False,
+    ) -> Tuple[Any, float]:
         """
-        Converts NumPy batch to torch.Tensor, runs forward pass and evaluates loss
-        (with optional per-sample curriculum weights from VGT PortManifold).
+        Runs forward pass and evaluates loss with automatic device placement.
+        Accepts both torch.Tensor and numpy.ndarray inputs with zero redundant PCIe transfers.
         """
-        x_tensor = self.torch.from_numpy(x).float()
-        if y.ndim == 1:
-            y_tensor = self.torch.from_numpy(y).long()
+        try:
+            device = next(self.model.parameters()).device
+        except StopIteration:
+            device = self.torch.device("cpu")
+
+        # 1. Device and type alignment
+        if isinstance(x, self.torch.Tensor):
+            x_tensor = x.to(device)
+        elif hasattr(x, "dtype") and np.issubdtype(x.dtype, np.integer):
+            x_tensor = self.torch.from_numpy(x).long().to(device)
         else:
-            y_tensor = self.torch.from_numpy(y).float()
+            x_tensor = self.torch.from_numpy(x).float().to(device)
+
+        if isinstance(y, self.torch.Tensor):
+            y_tensor = y.to(device)
+        elif hasattr(y, "dtype") and np.issubdtype(y.dtype, np.integer):
+            y_tensor = self.torch.from_numpy(y).long().to(device)
+        elif hasattr(y, "ndim") and y.ndim == 1:
+            y_tensor = self.torch.from_numpy(y).long().to(device)
+        else:
+            y_tensor = self.torch.from_numpy(y).float().to(device)
 
         self.optimizer.zero_grad()
-        predictions = self.model(x_tensor)
         self.last_sample_weights = sample_weights
 
-        # Evaluate loss (curriculum-weighted if weights provided)
-        if sample_weights is not None:
-            sw_tensor = self.torch.from_numpy(sample_weights).float().to(x_tensor.device)
-            # Try evaluating elementwise if loss function has reduction attribute
-            if hasattr(self.loss_fn, "reduction"):
-                orig_reduction = self.loss_fn.reduction
-                self.loss_fn.reduction = "none"
-                unreduced = self.loss_fn(predictions, y_tensor)
-                self.loss_fn.reduction = orig_reduction
-                if unreduced.ndim > 1:
-                    unreduced = unreduced.mean(dim=-1)
-                loss = (unreduced * sw_tensor).sum() / (sw_tensor.sum() + 1e-8)
-            else:
-                # Fallback: scale scalar loss by mean curriculum weight
-                base_loss = self.loss_fn(predictions, y_tensor)
-                loss = base_loss * sw_tensor.mean()
+        # 2. Forward pass execution
+        # If loss_fn is None, model is expected to accept targets and calculate internal loss (e.g. NanoGPT/LLMs)
+        loss = None
+        if self.loss_fn is None:
+            try:
+                predictions = self.model(x_tensor, y_tensor)
+            except TypeError:
+                try:
+                    predictions = self.model(x_tensor, targets=y_tensor)
+                except TypeError:
+                    predictions = self.model(x_tensor)
         else:
-            loss = self.loss_fn(predictions, y_tensor)
+            try:
+                predictions = self.model(x_tensor)
+            except TypeError:
+                predictions = self.model(x_tensor, y_tensor)
+
+        # 3. Loss resolution (model-internal loss or explicit loss_fn)
+        if isinstance(predictions, tuple) and len(predictions) == 2:
+            logits, internal_loss = predictions
+            predictions = logits
+            loss = internal_loss
+
+        if loss is None:
+            if self.loss_fn is not None:
+                if sample_weights is not None:
+                    if isinstance(sample_weights, self.torch.Tensor):
+                        sw_tensor = sample_weights.to(device)
+                    else:
+                        sw_tensor = self.torch.from_numpy(sample_weights).float().to(device)
+
+                    if hasattr(self.loss_fn, "reduction"):
+                        orig_reduction = self.loss_fn.reduction
+                        self.loss_fn.reduction = "none"
+                        unreduced = self.loss_fn(predictions, y_tensor)
+                        self.loss_fn.reduction = orig_reduction
+                        if unreduced.ndim > 1:
+                            unreduced = unreduced.mean(dim=-1)
+                        loss = (unreduced * sw_tensor).sum() / (sw_tensor.sum() + 1e-8)
+                    else:
+                        base_loss = self.loss_fn(predictions, y_tensor)
+                        loss = base_loss * sw_tensor.mean()
+                else:
+                    loss = self.loss_fn(predictions, y_tensor)
+            else:
+                raise ValueError("No loss_fn provided and model did not compute an internal loss.")
+        else:
+            # Model computed internal loss, apply curriculum weighting if present
+            if sample_weights is not None:
+                if isinstance(sample_weights, self.torch.Tensor):
+                    sw_mean = sample_weights.to(device).mean()
+                else:
+                    sw_mean = float(np.mean(sample_weights))
+                loss = loss * sw_mean
 
         self.last_loss_tensor = loss
 
-        pred_np = predictions.detach().cpu().numpy()
+        pred_out = predictions.detach().cpu().numpy() if return_numpy_preds else predictions.detach()
         loss_val = float(loss.item())
-        return pred_np, loss_val
+        return pred_out, loss_val
 
     def backward(self) -> float:
         """Runs loss.backward() and computes total parameter gradient L2 norm with zero intermediate device syncs."""

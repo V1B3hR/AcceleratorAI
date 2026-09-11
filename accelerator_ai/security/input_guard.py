@@ -59,13 +59,51 @@ class InputGuard:
         """
         self.total_screened_batches += 1
 
-        # 1. Convert to NumPy ndarray safely
+        # 1. Native PyTorch Tensor Fast Path (Zero host-device copies)
+        if hasattr(x, "is_cuda"):
+            x_t = x.unsqueeze(0) if x.ndim == 1 else x
+            if x_t.ndim != 2:
+                self.total_rejected_batches += 1
+                raise ValidationError(
+                    f"Input X must be a 2D matrix (batch_size, num_features). Got shape {tuple(x_t.shape)}."
+                )
+
+            batch_size, num_features = x_t.shape
+            if batch_size == 0:
+                self.total_rejected_batches += 1
+                raise ValidationError("Input X contains 0 samples (empty batch).")
+
+            if self.expected_features is not None and num_features != self.expected_features:
+                self.total_rejected_batches += 1
+                raise ValidationError(
+                    f"Feature dimension mismatch: expected {self.expected_features} features, got {num_features}."
+                )
+
+            if y is not None:
+                if len(y) != batch_size:
+                    self.total_rejected_batches += 1
+                    raise ValidationError(
+                        f"Batch size mismatch: X has {batch_size} samples, but Y has {len(y)} samples."
+                    )
+
+            if hasattr(x_t, "is_floating_point") and x_t.is_floating_point():
+                has_nan = bool((x_t != x_t).any().item() or x_t.isinf().any().item())
+                if has_nan:
+                    if self.strict_mode and not self.allow_nan:
+                        self.total_rejected_batches += 1
+                        raise CorruptedTensorError("Input X contains NaN or infinite values under strict mode.")
+                    import torch
+                    x_t = torch.nan_to_num(x_t, nan=0.0, posinf=self.max_magnitude, neginf=-self.max_magnitude)
+                    self.total_sanitized_samples += batch_size
+
+            return x_t, y
+
+        # 2. NumPy ndarray Path
         x_arr = self._to_numpy(x)
         y_arr = self._to_numpy(y) if y is not None else None
 
-        # 2. Dimensionality Checks
+        # Dimensionality Checks
         if x_arr.ndim == 1:
-            # Expand 1D single sample into (1, d) batch
             x_arr = x_arr.reshape(1, -1)
         elif x_arr.ndim != 2:
             self.total_rejected_batches += 1
@@ -91,13 +129,12 @@ class InputGuard:
                     f"Batch size mismatch: X has {batch_size} samples, but Y has {len(y_arr)} samples."
                 )
 
-        # 3. Numerical Health Screening (NaNs / Infs)
+        # Numerical Health Screening (NaNs / Infs)
         has_nan_x = np.isnan(x_arr).any() or np.isinf(x_arr).any()
         if has_nan_x:
             if self.strict_mode and not self.allow_nan:
                 self.total_rejected_batches += 1
                 raise CorruptedTensorError("Input X contains NaN or infinite values under strict mode.")
-            # Sanitize: replace NaNs with median/zero and clamp infinities
             x_arr = np.nan_to_num(x_arr, nan=0.0, posinf=self.max_magnitude, neginf=-self.max_magnitude)
             self.total_sanitized_samples += batch_size
 
@@ -109,19 +146,20 @@ class InputGuard:
                     raise CorruptedTensorError("Labels Y contain NaN or infinite values under strict mode.")
                 y_arr = np.nan_to_num(y_arr, nan=0.0, posinf=1.0, neginf=0.0)
 
-        # 4. Extreme Magnitude Clamping
-        extreme_mask = np.abs(x_arr) > self.max_magnitude
-        if extreme_mask.any():
-            if self.strict_mode:
-                self.total_rejected_batches += 1
-                raise ValidationError(
-                    f"Input X contains values exceeding maximum magnitude threshold ({self.max_magnitude})."
-                )
-            x_arr = np.clip(x_arr, -self.max_magnitude, self.max_magnitude)
-            self.total_sanitized_samples += int(np.sum(extreme_mask))
+        # Extreme Magnitude Clamping (only for continuous floating point data)
+        if np.issubdtype(x_arr.dtype, np.floating):
+            extreme_mask = np.abs(x_arr) > self.max_magnitude
+            if extreme_mask.any():
+                if self.strict_mode:
+                    self.total_rejected_batches += 1
+                    raise ValidationError(
+                        f"Input X contains values exceeding maximum magnitude threshold ({self.max_magnitude})."
+                    )
+                x_arr = np.clip(x_arr, -self.max_magnitude, self.max_magnitude)
+                self.total_sanitized_samples += int(np.sum(extreme_mask))
 
-        # 5. Type normalization (Standardize to float32)
-        if not np.issubdtype(x_arr.dtype, np.floating):
+        # Type normalization: standardize floating arrays to float32, preserve integer token sequences
+        if np.issubdtype(x_arr.dtype, np.floating) and x_arr.dtype != np.float32:
             x_arr = x_arr.astype(np.float32)
 
         return x_arr, y_arr

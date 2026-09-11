@@ -52,6 +52,55 @@ class AirFilter(TurbineModule):
         y = packet.y
 
         # =====================================================================
+        # Native PyTorch Tensor Fast Path (CUDA / CPU with Zero Host-Device Sync)
+        # =====================================================================
+        if hasattr(x, "is_cuda"):
+            if not x.is_floating_point():
+                # Discrete integer token IDs (LLMs / Transformers): bypass continuous arithmetic scrubbers
+                self.total_processed_packets += 1
+                self.total_processed_samples += packet.batch_size
+                packet.metadata["air_filter_clog"] = round(self.clog_level, 4)
+                packet.metadata["scrubbed_particles"] = 0.0
+                packet.metadata["magnetic_trapped"] = 0
+                packet.metadata["sonicated_clusters"] = 0
+                packet.metadata["piezo_cleaned"] = False
+                packet.metadata["ultrasonic_threshold"] = round(self.ultrasonic_dedup_threshold, 4)
+                return packet
+            else:
+                import torch
+                if self.purge_nans:
+                    has_nan_x = bool(torch.isnan(x).any() or torch.isinf(x).any())
+                    x_clean = torch.nan_to_num(x, nan=0.0, posinf=1e4, neginf=-1e4) if has_nan_x else x
+                    has_nan_y = bool(y is not None and (torch.isnan(y).any() or torch.isinf(y).any())) if (y is not None and y.is_floating_point()) else False
+                    y_clean = torch.nan_to_num(y, nan=0.0, posinf=1e4, neginf=-1e4) if (has_nan_y and y is not None) else y
+                else:
+                    x_clean, y_clean = x, y
+
+                med = torch.quantile(x_clean, 0.5, dim=0, keepdim=True)
+                diff = torch.abs(x_clean - med)
+                mad = torch.quantile(diff, 0.5, dim=0, keepdim=True) + 1e-5
+                scale = 1.4826 * mad
+                z_scores = diff / scale
+                outliers = z_scores > self.outlier_std_threshold
+                if outliers.any():
+                    filtered_x = torch.where(outliers, med + torch.sign(x_clean - med) * (self.outlier_std_threshold * scale), x_clean)
+                    dropped_particles = float(outliers.sum().item())
+                else:
+                    filtered_x = x_clean
+
+                self.total_processed_packets += 1
+                self.total_processed_samples += packet.batch_size
+                packet.x = filtered_x
+                packet.y = y_clean
+                packet.metadata["air_filter_clog"] = round(self.clog_level, 4)
+                packet.metadata["scrubbed_particles"] = dropped_particles
+                packet.metadata["magnetic_trapped"] = 0
+                packet.metadata["sonicated_clusters"] = 0
+                packet.metadata["piezo_cleaned"] = False
+                packet.metadata["ultrasonic_threshold"] = round(self.ultrasonic_dedup_threshold, 4)
+                return packet
+
+        # =====================================================================
         # Stage 1: Mechanical Paper Mesh (NaN/Inf Purge & Univariate MAD)
         # =====================================================================
         if self.purge_nans:

@@ -228,6 +228,8 @@ class ResonantObservationRoundabout:
         self.braided_ecu = braided_ecu
         self.sequential_turbo = sequential_turbo
         self.vvt = vvt
+        self.vvt_locked_gear: Optional[int] = None
+        self.locked_learning_rate: Optional[float] = None
 
     def modulate_intake_window(
         self,
@@ -242,6 +244,7 @@ class ResonantObservationRoundabout:
                 shaft_rpm=self.shaft.rpm,
                 boost_psi=boost_psi,
                 resonance_index=self.braided_ecu.resonance_index,
+                override_gear=self.vvt_locked_gear,
             )
             x_intake, y_intake = self.vvt.slice_batch(x_batch, y_batch)
         else:
@@ -286,6 +289,9 @@ class ResonantObservationRoundabout:
             pyrometer_temp=pyrometer_temp,
             loss=loss,
         )
+        if self.locked_learning_rate is not None:
+            self.braided_ecu.current_learning_rate = self.locked_learning_rate
+            braid_status["learning_rate"] = self.locked_learning_rate
         return braid_status, pyrometer_temp
 
 

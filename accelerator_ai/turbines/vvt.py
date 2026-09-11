@@ -68,6 +68,7 @@ class VariableValveTiming:
         shaft_rpm: float,
         boost_psi: float,
         resonance_index: float = 0.0,
+        override_gear: Optional[int] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Dynamically calculates optimal camshaft angle, valve lift, and discrete gearbox selection.
@@ -76,6 +77,7 @@ class VariableValveTiming:
             shaft_rpm: Current DriveShaft RPM.
             boost_psi: Manifold pressure gauge PSI.
             resonance_index: Helical resonance H from BraidedDNAController.
+            override_gear: Optional master-commanded gear for distributed lockstep synchronization.
 
         Returns:
             Tuple of (discrete_micro_batch_size, vvt_telemetry_dict).
@@ -103,11 +105,10 @@ class VariableValveTiming:
         self.volumetric_efficiency = float(np.clip(0.60 + 0.45 * rpm_factor * wave_tuning * self.valve_lift, 0.40, 1.25))
 
         # 4. Discrete Gearbox Selection (Skrzynia Biegów)
-        # Selects one of 3 static pre-allocated gears to avoid CUDA graph breaks:
-        # - Gear 1 (Low RPM / Spooling): small batch for fast low-inertia gradient response
-        # - Gear 2 (Cruising RPM): nominal base batch size
-        # - Gear 3 (High RPM / VTEC Peak Boost): wide batch for stable high-power averaging
-        if shaft_rpm < 1400.0:
+        # If distributed Master ECU specifies override_gear, lock to commanded gear:
+        if override_gear is not None:
+            gear_idx = min(max(0, override_gear - 1), len(self.gears) - 1)
+        elif shaft_rpm < 1400.0:
             gear_idx = 0
         elif shaft_rpm >= 3000.0 and self.volumetric_efficiency >= 0.85:
             gear_idx = len(self.gears) - 1
@@ -127,7 +128,7 @@ class VariableValveTiming:
         }
         return self.current_batch_size, telemetry
 
-    def slice_batch(self, x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def slice_batch(self, x: Any, y: Any) -> Tuple[Any, Any]:
         """
         Slices an incoming batch to the discrete gearbox micro-batch size.
         Uses contiguous zero-copy slicing (x[:target_n]) to prevent memory allocations
@@ -142,6 +143,10 @@ class VariableValveTiming:
             return x[:target_n], y[:target_n]
         else:
             # Repeat / oversample if incoming batch is smaller than current gear
+            if hasattr(x, "is_cuda") or hasattr(x, "device"):
+                import torch
+                idx = torch.randint(0, n, (target_n,), device=x.device)
+                return x[idx], y[idx]
             indices = np.random.choice(n, size=target_n, replace=True)
             return x[indices], y[indices]
 

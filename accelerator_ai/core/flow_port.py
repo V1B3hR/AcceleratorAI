@@ -167,13 +167,31 @@ class PortManifold:
             Per-sample pressure in [0, 1], shape (batch_size,).
         """
         x = packet.x
-        norms = np.linalg.norm(x, axis=1)
+        if hasattr(x, "is_cuda") or hasattr(x, "is_floating_point"):
+            # PyTorch Tensor handling
+            if hasattr(x, "is_floating_point") and not x.is_floating_point():
+                # Discrete tokens (e.g. LLM token IDs), equal pressure
+                return np.full(x.shape[0], 0.5)
+            flat_x = x.reshape(x.shape[0], -1)
+            norms_t = flat_x.norm(dim=1)
+            norm_min = norms_t.min()
+            norm_max = norms_t.max()
+            norm_range = norm_max - norm_min
+            if norm_range < 1e-8:
+                return np.full(x.shape[0], 0.5)
+            res = (norms_t - norm_min) / norm_range
+            return res.detach().cpu().numpy()
 
-        # Normalize to [0, 1] using robust min-max
+        # NumPy array handling
+        if hasattr(x, "dtype") and not np.issubdtype(x.dtype, np.floating):
+            return np.full(x.shape[0], 0.5)
+
+        flat_x = x.reshape(x.shape[0], -1)
+        norms = np.linalg.norm(flat_x, axis=1)
+
         norm_min = np.min(norms)
         norm_range = np.max(norms) - norm_min
         if norm_range < 1e-8:
-            # All samples have equal pressure → all cruise
             return np.full(len(norms), 0.5)
 
         return (norms - norm_min) / norm_range

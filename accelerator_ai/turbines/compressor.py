@@ -116,19 +116,28 @@ class CompressorTurbine(TurbineModule):
         # Hyper-flow samples get LESS noise (preserve their hard-example signal)
         # Slow-mo samples get MORE noise (exploratory augmentation)
         if self.enable_augmentation and self.boost_ratio > 1.05:
-            base_jitter = self.augmentation_factor * (self.boost_ratio - 1.0)
+            is_float = True
+            if hasattr(packet.x, "is_floating_point"):
+                is_float = packet.x.is_floating_point()
+            elif hasattr(packet.x, "dtype") and not np.issubdtype(packet.x.dtype, np.floating):
+                is_float = False
 
-            if curriculum_weights is not None:
-                # Inverse: high curriculum weight (hyper-flow) → low jitter
-                # low curriculum weight (slow-mo) → high jitter
-                inv_weights = np.clip(2.0 - curriculum_weights, 0.5, 2.0)
-                per_sample_jitter = base_jitter * inv_weights[:, np.newaxis]
-                noise = np.random.normal(0.0, 1.0, size=packet.x.shape) * per_sample_jitter
-            else:
-                noise = np.random.normal(0.0, base_jitter, size=packet.x.shape)
-
-            packet.x = packet.x + noise
-            packet.temperature += float(0.1 * (self.boost_ratio - 1.0))
+            if is_float:
+                base_jitter = self.augmentation_factor * (self.boost_ratio - 1.0)
+                if hasattr(packet.x, "is_cuda"):
+                    import torch
+                    noise = torch.randn_like(packet.x) * base_jitter
+                    packet.x = packet.x + noise
+                else:
+                    if curriculum_weights is not None:
+                        inv_weights = np.clip(2.0 - curriculum_weights, 0.5, 2.0)
+                        shape_broadcast = [packet.x.shape[0]] + [1] * (packet.x.ndim - 1)
+                        per_sample_jitter = base_jitter * inv_weights.reshape(shape_broadcast)
+                        noise = np.random.normal(0.0, 1.0, size=packet.x.shape) * per_sample_jitter
+                    else:
+                        noise = np.random.normal(0.0, base_jitter, size=packet.x.shape)
+                    packet.x = packet.x + noise
+                packet.temperature += float(0.1 * (self.boost_ratio - 1.0))
 
         # Compute reaction load torque exerted on the shaft
         self.compute_reaction_load()

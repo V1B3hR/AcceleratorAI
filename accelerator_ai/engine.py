@@ -63,6 +63,7 @@ class TurboLearningEngine:
         telemetry_interval: int = 1,
         fault_tolerance_mode: bool = True,
         input_guard: Optional[InputGuard] = None,
+        distributed_coordinator: Optional[Any] = None,
     ):
         self.model = model
         self.current_step: int = 0
@@ -70,6 +71,13 @@ class TurboLearningEngine:
         self.previous_loss: float = 1.0
         self.fault_tolerance_mode = fault_tolerance_mode
         self.input_guard = input_guard or InputGuard()
+
+        # Distributed Master-ECU Coordinator (DDP / FSDP lockstep sync)
+        if distributed_coordinator is not None:
+            self.distributed_coordinator = distributed_coordinator
+        else:
+            from accelerator_ai.ecu.distributed import DistributedECUCoordinator
+            self.distributed_coordinator = DistributedECUCoordinator()
 
         # Physical Mechanical Drive Shaft
         self.shaft = DriveShaft(
@@ -159,6 +167,21 @@ class TurboLearningEngine:
         """
         self.current_step += 1
         clean_x, clean_y = self.input_guard.sanitize(x_batch, y_batch)
+
+        # In distributed mode, synchronize engine gear and dynamics across ranks
+        if self.distributed_coordinator.is_distributed and self.vvt:
+            sync_gear, sync_lr, _, _ = self.distributed_coordinator.broadcast_engine_state(
+                vvt_gear=self.vvt.current_gear,
+                learning_rate=self.braided_ecu.current_learning_rate,
+                wastegate_open=bool(self.wastegate.open_pct > 0.0),
+                shock_fired=bool(self.shock_injector and self.shock_injector.last_fired_step == self.current_step),
+            )
+            if not self.distributed_coordinator.is_master:
+                self.observation_roundabout.vvt_locked_gear = sync_gear
+                self.observation_roundabout.locked_learning_rate = sync_lr
+                self.vvt.current_gear = sync_gear
+                self.vvt.current_batch_size = self.vvt.gears[min(sync_gear - 1, len(self.vvt.gears) - 1)]
+                self.braided_ecu.current_learning_rate = sync_lr
 
         try:
             res = self.pipeline.flow_step(
