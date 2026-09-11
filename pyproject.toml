@@ -45,9 +45,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/AcceleratorAI/AcceleratorAI"
-Documentation = "https://github.com/AcceleratorAI/AcceleratorAI#readme"
-Repository = "https://github.com/AcceleratorAI/AcceleratorAI"
+Homepage = "https://github.com/V1B3hR/AcceleratorAI"
+Documentation = "https://github.com/V1B3hR/AcceleratorAI#readme"
+Repository = "https://github.com/V1B3hR/AcceleratorAI"
 
 [tool.setuptools.packages.find]
 where = ["."]

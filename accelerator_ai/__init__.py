@@ -24,6 +24,7 @@ from accelerator_ai.injectors.realworld import RealWorldReservoirInjector
 from accelerator_ai.injectors.shock import EntropyShockInjector
 from accelerator_ai.ecu.controller import BoostController
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
+from accelerator_ai.ecu.distributed import DistributedECUCoordinator
 from accelerator_ai.ecu.telemetry import TelemetryHub
 from accelerator_ai.core.pipeline import (
     FluidPipeline,
@@ -37,6 +38,7 @@ from accelerator_ai.models.neural_core import PureNumPyMLP
 from accelerator_ai.models.torch_adapter import PyTorchTurbineWrapper
 from accelerator_ai.engine import TurboLearningEngine
 from accelerator_ai.security import InputGuard, ValidationError, CorruptedTensorError
+from accelerator_ai.benchmarks.nanogpt import NanoGPT, GPTConfig
 
 __version__ = "0.5.0"
 
@@ -72,6 +74,7 @@ __all__ = [
     "EntropyShockInjector",
     "BoostController",
     "BraidedDNAController",
+    "DistributedECUCoordinator",
     "TelemetryHub",
     "PureNumPyMLP",
     "PyTorchTurbineWrapper",
@@ -79,4 +82,6 @@ __all__ = [
     "InputGuard",
     "ValidationError",
     "CorruptedTensorError",
+    "NanoGPT",
+    "GPTConfig",
 ]

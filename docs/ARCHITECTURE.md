@@ -100,3 +100,59 @@ $$u(t) = K_p e(t) + K_i \int_0^t e(\tau) d\tau + K_d \frac{de(t)}{dt}$$
 where error $e(t) = \mathcal{L}_{t-1} - \mathcal{L}_t$ (loss reduction rate).
 
 When the exhaust pyrometer detects excessive heat ($T > 750^\circ\text{C}$, signifying exploding variance or imminent overfitting), the ECU instantly overrides boost and throttles the learning rate, stabilizing the training process.
+
+---
+
+## 5. Pneumatic Soft-Clipping Wastegate
+
+Traditional gradient clipping clamps vectors with a non-differentiable step function:
+
+$$g_{\text{hard}} = g \cdot \min\left(1, \frac{\text{threshold}}{\|g\|}\right)$$
+
+This hard discontinuity causes gradient shockwaves that destabilize Transformer self-attention layers and produce high-frequency ringing in deep manifolds.
+
+**AcceleratorAI** replaces this with continuous **pneumatic soft-clipping**:
+
+$$\tilde{g} = g \cdot \tanh\left(\frac{\text{threshold}}{\|g\|}\right)$$
+
+* When $\|g\| \ll \text{threshold}$, $\tanh(x) \approx x$, preserving small natural gradient steps identically.
+* When $\|g\| \gg \text{threshold}$, the hyperbolic tangent smoothly bleeds over-pressure asymptotically toward the threshold, guaranteeing continuous differentiability $C^\infty$ across all parameter tensors.
+
+---
+
+## 6. $O(B \log B)$ Ultrasonic Filtering with Information Pressure ($\Psi$) Coupling
+
+Standard duplicate and outlier detection suffers from quadratic $O(B^2)$ pairwise distance calculations, making it unusable for large batch LLM pre-training.
+
+The **AirFilter** implements a two-tier screening strategy:
+1. **Direct Pairwise Matrix**: When $B \le 64$, vectorized cosine similarity runs in a single BLAS GEMM call.
+2. **Strided Random Projection Screening**: When $B > 64$, input features are projected into a 1D random manifold and sorted in $O(B \log B)$ time. Candidate duplicate pairs are screened only within a localized sliding window ($\text{stride} = 8$), eliminating quadratic memory spikes.
+3. **Information Pressure ($\Psi$) Coupling**:
+   When packet pressure $\Psi > 1.0$ (indicating dense, high-entropy tokens or hard examples), the ultrasonic dispersion threshold automatically relaxes from $\tau = 0.98$ to $\tau = 0.999$. This guarantees that rare, high-leverage support vectors are never aggressively filtered.
+
+---
+
+## 7. Variable Valve Timing (VVT) Discrete Gearbox & Zero-Copy Slicing
+
+Continuous batch-size adjustments cause repeated CUDA buffer re-allocations and trigger JIT graph recompilations in `torch.compile` and CUDA Graphs.
+
+The **Variable Valve Timing (VVT)** module implements a **discrete 3-gear physical transmission** ("Skrzynia Biegów"):
+* **Gear 1 (16 samples)**: Engaged during startup and low-RPM spooling ($< 1400\text{ RPM}$). Generates higher gradient variance to rapidly discover dominant descent trajectories.
+* **Gear 2 (32 samples)**: Cruising phase for standard balanced training dynamics.
+* **Gear 3 (64 samples)**: Peak Boost / VTEC phase ($> 3000\text{ RPM}$, $\eta_v \ge 0.85$). Maximum stochastic averaging for fine-tuning deep basins.
+
+**Zero-Copy Contiguous Slicing**:
+All batch adjustments utilize slice views (`x[:target_n], y[:target_n]`), guaranteeing zero tensor allocations and full CUDA Graph / PyTorch 2.x JIT stability.
+
+---
+
+## 8. Distributed Master-ECU Synchronization (DDP / FSDP Lockstep)
+
+In multi-GPU cluster training (PyTorch DistributedDataParallel or FSDP), independent per-GPU dynamics would desynchronize batch shapes and cause fatal NCCL `all_reduce` deadlocks.
+
+The **`DistributedECUCoordinator`** establishes lockstep cluster execution:
+1. **Rank 0 (Master ECU)**: Executes the thermodynamic physical loop and computes all control decisions: VVT gear selection, Braided DNA learning rate, wastegate venting, and shock injection status.
+2. **Lockstep Broadcast**: Packs the 4 control variables into a 4-float tensor `[vvt_gear, lr, wastegate_flag, shock_flag]` and broadcasts across all ranks in a single collective call (`dist.broadcast`).
+3. **Worker Ranks (Slaves)**: Lock local VVT batch slicing and optimizer learning rates to the master's broadcast state, guaranteeing identical tensor dimensions across every GPU prior to gradient reduction.
+4. **Standalone Mode**: In single-GPU or non-distributed environments, the coordinator operates with zero overhead (`is_distributed = False`).
+

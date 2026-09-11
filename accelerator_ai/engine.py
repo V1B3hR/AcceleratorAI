@@ -33,14 +33,14 @@ from accelerator_ai.injectors.shock import EntropyShockInjector
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
 from accelerator_ai.ecu.telemetry import TelemetryHub
 from accelerator_ai.security.input_guard import InputGuard
-
-logger = logging.getLogger("accelerator_ai.engine")
 from accelerator_ai.core.pipeline import (
     FluidPipeline,
     ExpressCoreRoundabout,
     AuxiliaryInjectionRoundabout,
     ResonantObservationRoundabout,
 )
+
+logger = logging.getLogger("accelerator_ai.engine")
 
 
 class TurboLearningEngine:
