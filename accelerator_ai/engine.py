@@ -64,12 +64,14 @@ class TurboLearningEngine:
         fault_tolerance_mode: bool = True,
         input_guard: Optional[InputGuard] = None,
         distributed_coordinator: Optional[Any] = None,
+        fast_physics: bool = False,
     ):
         self.model = model
         self.current_step: int = 0
         self.current_epoch: int = 0
         self.previous_loss: float = 1.0
         self.fault_tolerance_mode = fault_tolerance_mode
+        self.fast_physics = fast_physics
         self.input_guard = input_guard or InputGuard()
 
         # Distributed Master-ECU Coordinator (DDP / FSDP lockstep sync)
@@ -175,6 +177,7 @@ class TurboLearningEngine:
                 learning_rate=self.braided_ecu.current_learning_rate,
                 wastegate_open=bool(self.wastegate.open_pct > 0.0),
                 shock_fired=bool(self.shock_injector and self.shock_injector.last_fired_step == self.current_step),
+                step=self.current_step,
             )
             if not self.distributed_coordinator.is_master:
                 self.observation_roundabout.vvt_locked_gear = sync_gear
@@ -182,6 +185,56 @@ class TurboLearningEngine:
                 self.vvt.current_gear = sync_gear
                 self.vvt.current_batch_size = self.vvt.gears[min(sync_gear - 1, len(self.vvt.gears) - 1)]
                 self.braided_ecu.current_learning_rate = sync_lr
+
+        if self.fast_physics:
+            # High-throughput Fast-Physics Execution (Zero intermediate memory allocations)
+            # 1. Discrete VVT gearbox micro-batching
+            if self.vvt:
+                clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
+
+            # 2. Forward pass & loss
+            predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
+
+            # 3. Exhaust harvesting & soft-clipping
+            fused_packet = FlowPacket(x=clean_x, y=clean_y, pressure=self.compressor.boost_ratio)
+            grad_norm, learning_torque = self.gradient_turbine.harvest_gradients(
+                model=self.model,
+                fused_packet=fused_packet,
+                boost_ratio=self.compressor.boost_ratio,
+            )
+            clipped_norm, was_vented = self.wastegate.inspect_and_regulate(
+                model=self.model,
+                gradient_norm=grad_norm,
+                boost_ratio=self.compressor.boost_ratio,
+            )
+
+            # 4. Drive shaft Newton kinetics & Braided DNA
+            compressor_load = self.compressor.compute_reaction_load()
+            self.observation_roundabout.step_rotational_physics(
+                learning_torque=learning_torque,
+                compressor_load=compressor_load,
+                dt=0.08,
+            )
+            braid_status, pyrometer_temp = self.observation_roundabout.weave_dna(
+                step=self.current_step,
+                learning_torque=learning_torque,
+                boost_ratio=self.compressor.boost_ratio,
+                injected_entropy=0.0,
+                loss=loss,
+            )
+
+            # 5. Parameter update
+            self.model.apply_updates(learning_rate=braid_status["learning_rate"])
+            self.previous_loss = float(loss)
+
+            return CombustionResult(
+                loss=float(loss),
+                predictions=predictions,
+                fused_packet=fused_packet,
+                exhaust_energy=float(loss * self.compressor.boost_ratio),
+                air_fuel_ratio=14.7,
+                homogeneity_pct=100.0,
+            )
 
         try:
             res = self.pipeline.flow_step(

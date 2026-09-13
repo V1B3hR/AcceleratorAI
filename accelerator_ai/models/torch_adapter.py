@@ -91,7 +91,10 @@ class PyTorchTurbineWrapper:
         else:
             y_tensor = self.torch.from_numpy(y).float().to(device)
 
-        self.optimizer.zero_grad()
+        try:
+            self.optimizer.zero_grad(set_to_none=True)
+        except TypeError:
+            self.optimizer.zero_grad()
         self.last_sample_weights = sample_weights
 
         # 2. Forward pass execution
@@ -162,34 +165,53 @@ class PyTorchTurbineWrapper:
 
         self.last_loss_tensor.backward()
 
-        grads = [p.grad.detach() for p in self.model.parameters() if p.grad is not None]
-        if not grads:
+        self._last_grads = [p.grad for p in self.model.parameters() if p.grad is not None]
+        if not self._last_grads:
             return 0.0
 
-        # Vectorized on-device sum of squares (single PCIe sync instead of N-parameter syncs)
-        total_sq = sum(g.data.norm(2).square() for g in grads)
-        return float(self.torch.sqrt(total_sq).item())
+        # Fused multi-tensor GPU norm reduction
+        if hasattr(self.torch, "_foreach_norm"):
+            norms = self.torch._foreach_norm(self._last_grads, 2)
+            self._last_grad_norm_t = self.torch.linalg.vector_norm(self.torch.stack(norms))
+        else:
+            total_sq = sum(g.data.norm(2).square() for g in self._last_grads)
+            self._last_grad_norm_t = self.torch.sqrt(total_sq)
+
+        self._last_grad_norm = float(self._last_grad_norm_t.item())
+        return self._last_grad_norm
 
     def clip_gradients(self, max_norm: float) -> None:
         """Wastegate hard gradient clipping."""
         self.torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_norm)
 
-    def soft_clip_gradients(self, threshold: float) -> float:
-        """Pneumatic soft-clipping via smooth tanh scaling with single on-device reduction."""
-        grads = [p.grad.detach() for p in self.model.parameters() if p.grad is not None]
+    def soft_clip_gradients(self, threshold: float, precomputed_norm: Optional[float] = None) -> float:
+        """Pneumatic soft-clipping via smooth tanh scaling using fused multi-tensor kernel."""
+        grads = getattr(self, "_last_grads", None)
+        if grads is None or len(grads) == 0:
+            grads = [p.grad for p in self.model.parameters() if p.grad is not None]
         if not grads or threshold <= 0.0:
             return 0.0
 
-        total_sq = sum(g.data.norm(2).square() for g in grads)
-        total_norm_t = self.torch.sqrt(total_sq)
-        total_norm = float(total_norm_t.item())
+        if hasattr(self, "_last_grad_norm_t") and self._last_grad_norm_t is not None:
+            norm_t = self._last_grad_norm_t
+        else:
+            if hasattr(self.torch, "_foreach_norm"):
+                norms = self.torch._foreach_norm(grads, 2)
+                norm_t = self.torch.linalg.vector_norm(self.torch.stack(norms))
+            else:
+                total_sq = sum(g.data.norm(2).square() for g in grads)
+                norm_t = self.torch.sqrt(total_sq)
 
-        if total_norm > 1e-8:
-            scale = float(self.torch.tanh(threshold / total_norm_t).item())
+        scale_t = self.torch.tanh(threshold / (norm_t + 1e-8))
+        if hasattr(self.torch, "_foreach_mul_"):
+            self.torch._foreach_mul_(grads, scale_t)
+        else:
+            scale_val = float(scale_t.item())
             for g in grads:
-                g.mul_(scale)
-            return total_norm * scale
-        return total_norm
+                g.mul_(scale_val)
+
+        clipped_norm_t = norm_t * scale_t
+        return float(clipped_norm_t.item())
 
     def apply_updates(self, learning_rate: float) -> None:
         """Drive Shaft parameter update."""

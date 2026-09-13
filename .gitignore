@@ -48,3 +48,5 @@ htmlcov/
 checkpoints/
 telemetry_dumps/
 data/
+scratch/
+benchmarks/results/profile/

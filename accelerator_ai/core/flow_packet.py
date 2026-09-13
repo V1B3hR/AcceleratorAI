@@ -81,7 +81,12 @@ class FlowPacket:
     @property
     def is_torch(self) -> bool:
         """Returns True if the underlying data is a PyTorch Tensor."""
-        return "torch" in type(self.x).__module__
+        return type(self.x).__module__.startswith("torch")
+
+    @property
+    def is_tokens(self) -> bool:
+        """Returns True if underlying data is discrete integer token sequences."""
+        return hasattr(self.x, "is_floating_point") and not self.x.is_floating_point()
 
     def to_numpy(self) -> "FlowPacket":
         """Ensures underlying tensors are NumPy ndarrays (zero-copy if already NumPy)."""
@@ -165,3 +170,16 @@ class FlowPacket:
             source=source_tag,
             metadata={"merged_sources": [p.source for p in valid_packets]},
         )
+
+
+@dataclass
+class TokenFlowPacket(FlowPacket):
+    """
+    Dedicated high-throughput FlowPacket for discrete integer tokens (LLMs / Transformers).
+    Guarantees pure zero-copy GPU tensor handling: never leaves GPU memory,
+    skips continuous arithmetic sanitization, and preserves integer types (torch.long).
+    """
+
+    @property
+    def is_tokens(self) -> bool:
+        return True

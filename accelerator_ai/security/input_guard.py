@@ -60,7 +60,7 @@ class InputGuard:
         self.total_screened_batches += 1
 
         # 1. Native PyTorch Tensor Fast Path (Zero host-device copies)
-        if hasattr(x, "is_cuda"):
+        if type(x).__module__.startswith("torch"):
             x_t = x.unsqueeze(0) if x.ndim == 1 else x
             if x_t.ndim != 2:
                 self.total_rejected_batches += 1
@@ -86,15 +86,20 @@ class InputGuard:
                         f"Batch size mismatch: X has {batch_size} samples, but Y has {len(y)} samples."
                     )
 
-            if hasattr(x_t, "is_floating_point") and x_t.is_floating_point():
+            if hasattr(x_t, "is_floating_point") and not x_t.is_floating_point():
+                # Discrete integer tokens (e.g. LLM inputs): 100% immune to NaNs/Infs, zero sync
+                return x_t, y
+
+            # Floating point tensor sanitization
+            if self.strict_mode and not self.allow_nan:
                 has_nan = bool((x_t != x_t).any().item() or x_t.isinf().any().item())
                 if has_nan:
-                    if self.strict_mode and not self.allow_nan:
-                        self.total_rejected_batches += 1
-                        raise CorruptedTensorError("Input X contains NaN or infinite values under strict mode.")
-                    import torch
-                    x_t = torch.nan_to_num(x_t, nan=0.0, posinf=self.max_magnitude, neginf=-self.max_magnitude)
-                    self.total_sanitized_samples += batch_size
+                    self.total_rejected_batches += 1
+                    raise CorruptedTensorError("Input X contains NaN or infinite values under strict mode.")
+            else:
+                # Pure asynchronous on-device nan_to_num (zero device-to-host sync)
+                import torch
+                x_t = torch.nan_to_num(x_t, nan=0.0, posinf=self.max_magnitude, neginf=-self.max_magnitude)
 
             return x_t, y
 

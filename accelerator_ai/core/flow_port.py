@@ -214,6 +214,13 @@ class PortManifold:
         self.last_pressure_distribution = sample_pressures
         n = packet.batch_size
 
+        # Fast path: when sample pressures are uniform (e.g. LLM token IDs or equal norms),
+        # all weights evaluate to 1.0 -> skip allocation and unreduced loss overhead
+        if np.all(sample_pressures == 0.5) or (np.max(sample_pressures) - np.min(sample_pressures) < 1e-6):
+            packet.metadata["curriculum_weights"] = None
+            packet.metadata["sample_pressures"] = sample_pressures
+            return packet
+
         # Assign per-sample curriculum weight based on port routing
         weights = np.ones(n, dtype=np.float64)
         port_assignments = np.full(n, -1, dtype=np.int32)

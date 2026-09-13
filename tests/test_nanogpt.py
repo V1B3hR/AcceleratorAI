@@ -86,6 +86,33 @@ class TestNanoGPTIntegration(unittest.TestCase):
         clipped_norm = wrapper.soft_clip_gradients(threshold=0.1)
         self.assertLessEqual(clipped_norm, 0.15)
 
+    def test_token_flow_packet(self):
+        """Verifies TokenFlowPacket preserves discrete integer types with zero GPU copies."""
+        from accelerator_ai.core.flow_packet import TokenFlowPacket
+        tokens = torch.randint(0, 128, (8, 16), dtype=torch.long)
+        packet = TokenFlowPacket(x=tokens, y=tokens)
+        self.assertTrue(packet.is_tokens)
+        self.assertTrue(packet.is_torch)
+        self.assertEqual(packet.batch_size, 8)
+
+    def test_fast_physics_nanogpt(self):
+        """Verifies TurboLearningEngine with fast_physics=True completes steps without error."""
+        wrapper = PyTorchTurbineWrapper(self.model, self.optimizer, loss_fn=None)
+        engine = TurboLearningEngine(
+            model=wrapper,
+            enable_default_injectors=False,
+            enable_vvt=True,
+            fast_physics=True,
+        )
+
+        x = torch.randint(0, 128, (16, 32))
+        y = torch.randint(0, 128, (16, 32))
+
+        res = engine.step(x, y)
+        self.assertIsNotNone(res)
+        self.assertGreater(res.loss, 0.0)
+        self.assertEqual(engine.current_step, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

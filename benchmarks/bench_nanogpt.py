@@ -179,6 +179,7 @@ def run_accelerator_ai(
     learning_rate: float = 1e-3,
     device: str = "cuda:0",
     seed: int = 42,
+    fast_physics: bool = False,
 ) -> Dict[str, Any]:
     """Runs AcceleratorAI TurboLearningEngine with VVT, Ultrasonic Filter, Soft-Wastegate, and Braided ECU."""
     torch.manual_seed(seed)
@@ -188,6 +189,8 @@ def run_accelerator_ai(
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
     wrapper = PyTorchTurbineWrapper(model, optimizer, loss_fn=None)
 
+    engine_name = "AcceleratorAI (Fast-Physics)" if fast_physics else "AcceleratorAI (Full Fluid)"
+
     engine = TurboLearningEngine(
         model=wrapper,
         base_learning_rate=learning_rate,
@@ -195,6 +198,8 @@ def run_accelerator_ai(
         enable_default_injectors=False,
         enable_vvt=True,
         fault_tolerance_mode=False,
+        fast_physics=fast_physics,
+        telemetry_interval=10,
     )
 
     step_losses = []
@@ -210,7 +215,7 @@ def run_accelerator_ai(
     start_time = time.perf_counter()
     total_tokens = 0
 
-    print(f"\n--- Starting AcceleratorAI TurboLearningEngine ({num_steps} steps, device={device}) ---")
+    print(f"\n--- Starting {engine_name} ({num_steps} steps, device={device}) ---")
     for step in range(num_steps):
         t0 = time.perf_counter()
         x, y = dataset.get_batch("train", batch_size, config.block_size, device)
@@ -237,7 +242,7 @@ def run_accelerator_ai(
             boost = round(engine.shaft.rpm, 1)
             ecu_lr = round(engine.braided_ecu.current_learning_rate, 6)
             print(
-                f"[AcceleratorAI] Step {step:4d}/{num_steps} | Loss: {res.loss:.4f} | "
+                f"[{engine_name}] Step {step:4d}/{num_steps} | Loss: {res.loss:.4f} | "
                 f"Val: {val_loss:.4f} | PPL: {ppl:.2f} | Gear: {current_gear} | "
                 f"RPM: {boost} | ECU LR: {ecu_lr:.5f} | Latency: {dt:.2f}ms"
             )
@@ -253,7 +258,7 @@ def run_accelerator_ai(
     final_ppl = math.exp(min(final_val_loss, 20.0))
 
     return {
-        "name": "AcceleratorAI TurboLearningEngine",
+        "name": engine_name,
         "steps": num_steps,
         "total_wall_time_sec": round(total_wall_time, 3),
         "mean_latency_ms": round(float(np.mean(step_latencies)), 2),
@@ -321,50 +326,61 @@ def main():
         learning_rate=lr,
         device=device,
         seed=1337,
+        fast_physics=False,
+    )
+
+    results_fast_physics = run_accelerator_ai(
+        dataset=dataset,
+        config=config,
+        num_steps=num_steps,
+        batch_size=batch_size,
+        learning_rate=lr,
+        device=device,
+        seed=1337,
+        fast_physics=True,
     )
 
     # 4. Comparative Synthesis
-    print(f"\n================================================================")
+    print(f"\n==========================================================================================================")
     print(f" FINAL BENCHMARK SUMMARY (NVIDIA RTX 4070 - {num_steps} Steps)")
-    print(f"================================================================")
-    print(f"{'Metric':<30} | {'Vanilla AdamW':<16} | {'AcceleratorAI':<16} | {'Improvement':<12}")
-    print("-" * 82)
+    print(f"==========================================================================================================")
+    print(f"{'Metric':<28} | {'Vanilla AdamW':<16} | {'Full Fluid':<16} | {'Fast-Physics':<16} | {'Fast vs Vanilla':<14}")
+    print("-" * 102)
 
-    # Final Val Loss
     v_loss = results_vanilla["final_val_loss"]
     a_loss = results_accelerator["final_val_loss"]
-    loss_delta = ((v_loss - a_loss) / v_loss) * 100.0
-    print(f"{'Validation Loss':<30} | {v_loss:<16.4f} | {a_loss:<16.4f} | {loss_delta:+.2f}%")
+    f_loss = results_fast_physics["final_val_loss"]
+    loss_delta = ((v_loss - f_loss) / v_loss) * 100.0
+    print(f"{'Validation Loss':<28} | {v_loss:<16.4f} | {a_loss:<16.4f} | {f_loss:<16.4f} | {loss_delta:+.2f}%")
 
-    # Perplexity
     v_ppl = results_vanilla["final_perplexity"]
     a_ppl = results_accelerator["final_perplexity"]
-    ppl_ratio = v_ppl / a_ppl if a_ppl > 0 else 1.0
-    print(f"{'Validation Perplexity (PPL)':<30} | {v_ppl:<16.2f} | {a_ppl:<16.2f} | {ppl_ratio:.2f}x better")
+    f_ppl = results_fast_physics["final_perplexity"]
+    ppl_ratio = v_ppl / f_ppl if f_ppl > 0 else 1.0
+    print(f"{'Validation Perplexity (PPL)':<28} | {v_ppl:<16.2f} | {a_ppl:<16.2f} | {f_ppl:<16.2f} | {ppl_ratio:.2f}x better")
 
-    # Tokens / sec throughput
-    v_tok = results_vanilla["tokens_per_sec"]
-    a_tok = results_accelerator["tokens_per_sec"]
-    tok_delta = ((a_tok - v_tok) / v_tok) * 100.0
-    print(f"{'Throughput (Tokens/sec)':<30} | {v_tok:<16.1f} | {a_tok:<16.1f} | {tok_delta:+.2f}%")
-
-    # Mean step latency
     v_lat = results_vanilla["mean_latency_ms"]
     a_lat = results_accelerator["mean_latency_ms"]
-    print(f"{'Mean Step Latency (ms)':<30} | {v_lat:<16.2f} | {a_lat:<16.2f} | {a_lat - v_lat:+.2f} ms")
+    f_lat = results_fast_physics["mean_latency_ms"]
+    print(f"{'Mean Step Latency (ms)':<28} | {v_lat:<16.2f} | {a_lat:<16.2f} | {f_lat:<16.2f} | {f_lat - v_lat:+.2f} ms")
 
-    # Peak VRAM
+    v_tok = results_vanilla["tokens_per_sec"]
+    a_tok = results_accelerator["tokens_per_sec"]
+    f_tok = results_fast_physics["tokens_per_sec"]
+    tok_delta = ((f_tok - v_tok) / v_tok) * 100.0
+    print(f"{'Throughput (Tokens/sec)':<28} | {v_tok:<16.1f} | {a_tok:<16.1f} | {f_tok:<16.1f} | {tok_delta:+.2f}%")
+
     v_mem = results_vanilla["peak_vram_mb"]
     a_mem = results_accelerator["peak_vram_mb"]
-    print(f"{'Peak VRAM (MB)':<30} | {v_mem:<16.1f} | {a_mem:<16.1f} | {a_mem - v_mem:+.1f} MB")
-    print("=" * 82)
+    f_mem = results_fast_physics["peak_vram_mb"]
+    print(f"{'Peak VRAM (MB)':<28} | {v_mem:<16.1f} | {a_mem:<16.1f} | {f_mem:<16.1f} | {f_mem - v_mem:+.1f} MB")
+    print("=" * 102)
 
     # Save output to JSON
     results_dir = os.path.join(os.path.dirname(__file__), "results")
     os.makedirs(results_dir, exist_ok=True)
     out_file = os.path.join(results_dir, "nanogpt_rtx4070_results.json")
 
-    # Remove full step list for clean summary JSON
     summary_data = {
         "hardware": gpu_name,
         "pytorch_version": torch.__version__,
@@ -372,12 +388,14 @@ def main():
         "architecture": "NanoGPT (4L/4H/128E)",
         "parameters": n_params,
         "steps": num_steps,
-        "vanilla_adamw": {k: v for k, v in results_vanilla.items() if k != "step_losses"},
-        "accelerator_ai": {k: v for k, v in results_accelerator.items() if k != "step_losses"},
-        "comparison": {
+        "vanilla_adamw": {k: v for k, v in results_vanilla.items() if k not in ("step_losses", "vvt_gears")},
+        "accelerator_ai_full": {k: v for k, v in results_accelerator.items() if k not in ("step_losses", "vvt_gears")},
+        "accelerator_ai_fast_physics": {k: v for k, v in results_fast_physics.items() if k not in ("step_losses", "vvt_gears")},
+        "comparison_fast_vs_vanilla": {
             "val_loss_reduction_pct": round(loss_delta, 2),
             "perplexity_ratio": round(ppl_ratio, 2),
-            "tokens_per_sec_throughput_ratio": round(a_tok / v_tok, 2),
+            "step_latency_delta_ms": round(f_lat - v_lat, 2),
+            "tokens_per_sec_throughput_ratio": round(f_tok / v_tok, 2),
         }
     }
 

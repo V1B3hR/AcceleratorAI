@@ -66,6 +66,37 @@ class TestDistributedECUCoordinator(unittest.TestCase):
         self.assertEqual(engine.braided_ecu.current_learning_rate, 0.035)
         mock_coord.broadcast_engine_state.assert_called_once()
 
+    def test_sync_interval_throttling(self):
+        """Verifies that non-emergency states are throttled when sync_interval > 1."""
+        coord = DistributedECUCoordinator(master_rank=0, sync_interval=5)
+        # Mock distributed status
+        coord._is_distributed = True
+        coord._rank = 0
+        coord._world_size = 2
+        coord._last_synced_state = (2, 0.02, False, False)
+
+        with patch("torch.distributed.broadcast") as mock_dist_broadcast:
+            # Step 1: 1 % 5 != 0 -> should NOT broadcast, should return cached
+            gear, lr, wg, shock = coord.broadcast_engine_state(
+                vvt_gear=3, learning_rate=0.03, wastegate_open=False, shock_fired=False, step=1
+            )
+            mock_dist_broadcast.assert_not_called()
+            self.assertEqual(gear, 2)
+            self.assertEqual(lr, 0.02)
+
+            # Step 5: 5 % 5 == 0 -> should broadcast
+            coord.broadcast_engine_state(
+                vvt_gear=3, learning_rate=0.03, wastegate_open=False, shock_fired=False, step=5
+            )
+            mock_dist_broadcast.assert_called_once()
+
+            # Emergency: wastegate_open=True at step 2 -> should bypass throttling and broadcast immediately
+            mock_dist_broadcast.reset_mock()
+            coord.broadcast_engine_state(
+                vvt_gear=1, learning_rate=0.01, wastegate_open=True, shock_fired=False, step=2
+            )
+            mock_dist_broadcast.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

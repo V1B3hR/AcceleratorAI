@@ -59,7 +59,10 @@ class WastegateValve(TurbineModule):
 
         def apply_clipping(target_norm: float) -> float:
             if self.enable_soft_clipping and hasattr(model, "soft_clip_gradients"):
-                return float(model.soft_clip_gradients(threshold=target_norm))
+                try:
+                    return float(model.soft_clip_gradients(threshold=target_norm, precomputed_norm=gradient_norm))
+                except TypeError:
+                    return float(model.soft_clip_gradients(threshold=target_norm))
             model.clip_gradients(max_norm=target_norm)
             return min(gradient_norm, target_norm)
 
