@@ -179,28 +179,57 @@ def run_accelerator_ai(
     learning_rate: float = 1e-3,
     device: str = "cuda:0",
     seed: int = 42,
-    fast_physics: bool = False,
+    mode: str = "full_fluid",
 ) -> Dict[str, Any]:
-    """Runs AcceleratorAI TurboLearningEngine with VVT, Ultrasonic Filter, Soft-Wastegate, and Braided ECU."""
+    """Runs AcceleratorAI TurboLearningEngine with specified performance mode."""
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     model = NanoGPT(config).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
-    wrapper = PyTorchTurbineWrapper(model, optimizer, loss_fn=None)
+    is_cuda_graph = (mode == "cuda_graph_bf16")
+    is_adaptive = (mode == "adaptive_turbo")
+    is_amp = (mode == "cuda_graph_bf16")
 
-    engine_name = "AcceleratorAI (Fast-Physics)" if fast_physics else "AcceleratorAI (Full Fluid)"
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=1e-2,
+        capturable=is_cuda_graph,
+    )
+    wrapper = PyTorchTurbineWrapper(
+        model=model,
+        optimizer=optimizer,
+        loss_fn=None,
+        enable_amp=is_amp,
+        amp_dtype="bfloat16" if is_amp else "float16",
+    )
+
+    mode_names = {
+        "full_fluid": "AcceleratorAI (Full Fluid)",
+        "adaptive_turbo": "AcceleratorAI (Adaptive Turbo)",
+        "cuda_graph_bf16": "AcceleratorAI (CUDA Graph + BF16)",
+    }
+    engine_name = mode_names.get(mode, f"AcceleratorAI ({mode})")
 
     engine = TurboLearningEngine(
         model=wrapper,
         base_learning_rate=learning_rate,
         target_boost_psi=14.7,
         enable_default_injectors=False,
-        enable_vvt=True,
+        enable_vvt=not is_cuda_graph,
         fault_tolerance_mode=False,
-        fast_physics=fast_physics,
+        fast_physics=False,
+        adaptive_turbo=is_adaptive,
+        enable_cuda_graph=is_cuda_graph,
+        enable_amp=is_amp,
+        amp_dtype="bfloat16" if is_amp else "float16",
         telemetry_interval=10,
     )
+
+    # If CUDA Graph mode is selected, warm up and capture graph on device
+    if is_cuda_graph:
+        init_x, init_y = dataset.get_batch("train", batch_size, config.block_size, device)
+        engine.capture_cuda_graph(init_x, init_y)
 
     step_losses = []
     val_checkpoints = []
@@ -318,7 +347,7 @@ def main():
         seed=1337,
     )
 
-    results_accelerator = run_accelerator_ai(
+    results_full = run_accelerator_ai(
         dataset=dataset,
         config=config,
         num_steps=num_steps,
@@ -326,10 +355,10 @@ def main():
         learning_rate=lr,
         device=device,
         seed=1337,
-        fast_physics=False,
+        mode="full_fluid",
     )
 
-    results_fast_physics = run_accelerator_ai(
+    results_adaptive = run_accelerator_ai(
         dataset=dataset,
         config=config,
         num_steps=num_steps,
@@ -337,44 +366,61 @@ def main():
         learning_rate=lr,
         device=device,
         seed=1337,
-        fast_physics=True,
+        mode="adaptive_turbo",
+    )
+
+    results_cuda_graph = run_accelerator_ai(
+        dataset=dataset,
+        config=config,
+        num_steps=num_steps,
+        batch_size=batch_size,
+        learning_rate=lr,
+        device=device,
+        seed=1337,
+        mode="cuda_graph_bf16",
     )
 
     # 4. Comparative Synthesis
-    print(f"\n==========================================================================================================")
+    print(f"\n===================================================================================================================================")
     print(f" FINAL BENCHMARK SUMMARY (NVIDIA RTX 4070 - {num_steps} Steps)")
-    print(f"==========================================================================================================")
-    print(f"{'Metric':<28} | {'Vanilla AdamW':<16} | {'Full Fluid':<16} | {'Fast-Physics':<16} | {'Fast vs Vanilla':<14}")
-    print("-" * 102)
+    print(f"===================================================================================================================================")
+    print(f"{'Metric':<28} | {'Vanilla AdamW':<14} | {'Full Fluid':<14} | {'Adaptive Turbo':<16} | {'CUDA Graph (BF16)':<18} | {'CUDA vs Vanilla':<14}")
+    print("-" * 115)
 
     v_loss = results_vanilla["final_val_loss"]
-    a_loss = results_accelerator["final_val_loss"]
-    f_loss = results_fast_physics["final_val_loss"]
-    loss_delta = ((v_loss - f_loss) / v_loss) * 100.0
-    print(f"{'Validation Loss':<28} | {v_loss:<16.4f} | {a_loss:<16.4f} | {f_loss:<16.4f} | {loss_delta:+.2f}%")
+    a_loss = results_full["final_val_loss"]
+    t_loss = results_adaptive["final_val_loss"]
+    c_loss = results_cuda_graph["final_val_loss"]
+    loss_delta = ((v_loss - c_loss) / v_loss) * 100.0
+    print(f"{'Validation Loss':<28} | {v_loss:<14.4f} | {a_loss:<14.4f} | {t_loss:<16.4f} | {c_loss:<18.4f} | {loss_delta:+.2f}%")
 
     v_ppl = results_vanilla["final_perplexity"]
-    a_ppl = results_accelerator["final_perplexity"]
-    f_ppl = results_fast_physics["final_perplexity"]
-    ppl_ratio = v_ppl / f_ppl if f_ppl > 0 else 1.0
-    print(f"{'Validation Perplexity (PPL)':<28} | {v_ppl:<16.2f} | {a_ppl:<16.2f} | {f_ppl:<16.2f} | {ppl_ratio:.2f}x better")
+    a_ppl = results_full["final_perplexity"]
+    t_ppl = results_adaptive["final_perplexity"]
+    c_ppl = results_cuda_graph["final_perplexity"]
+    ppl_ratio = v_ppl / c_ppl if c_ppl > 0 else 1.0
+    print(f"{'Validation Perplexity (PPL)':<28} | {v_ppl:<14.2f} | {a_ppl:<14.2f} | {t_ppl:<16.2f} | {c_ppl:<18.2f} | {ppl_ratio:.2f}x better")
 
     v_lat = results_vanilla["mean_latency_ms"]
-    a_lat = results_accelerator["mean_latency_ms"]
-    f_lat = results_fast_physics["mean_latency_ms"]
-    print(f"{'Mean Step Latency (ms)':<28} | {v_lat:<16.2f} | {a_lat:<16.2f} | {f_lat:<16.2f} | {f_lat - v_lat:+.2f} ms")
+    a_lat = results_full["mean_latency_ms"]
+    t_lat = results_adaptive["mean_latency_ms"]
+    c_lat = results_cuda_graph["mean_latency_ms"]
+    lat_delta = c_lat - v_lat
+    print(f"{'Mean Step Latency (ms)':<28} | {v_lat:<14.2f} | {a_lat:<14.2f} | {t_lat:<16.2f} | {c_lat:<18.2f} | {lat_delta:+.2f} ms")
 
     v_tok = results_vanilla["tokens_per_sec"]
-    a_tok = results_accelerator["tokens_per_sec"]
-    f_tok = results_fast_physics["tokens_per_sec"]
-    tok_delta = ((f_tok - v_tok) / v_tok) * 100.0
-    print(f"{'Throughput (Tokens/sec)':<28} | {v_tok:<16.1f} | {a_tok:<16.1f} | {f_tok:<16.1f} | {tok_delta:+.2f}%")
+    a_tok = results_full["tokens_per_sec"]
+    t_tok = results_adaptive["tokens_per_sec"]
+    c_tok = results_cuda_graph["tokens_per_sec"]
+    tok_delta = ((c_tok - v_tok) / v_tok) * 100.0
+    print(f"{'Throughput (Tokens/sec)':<28} | {v_tok:<14.1f} | {a_tok:<14.1f} | {t_tok:<16.1f} | {c_tok:<18.1f} | {tok_delta:+.2f}%")
 
     v_mem = results_vanilla["peak_vram_mb"]
-    a_mem = results_accelerator["peak_vram_mb"]
-    f_mem = results_fast_physics["peak_vram_mb"]
-    print(f"{'Peak VRAM (MB)':<28} | {v_mem:<16.1f} | {a_mem:<16.1f} | {f_mem:<16.1f} | {f_mem - v_mem:+.1f} MB")
-    print("=" * 102)
+    a_mem = results_full["peak_vram_mb"]
+    t_mem = results_adaptive["peak_vram_mb"]
+    c_mem = results_cuda_graph["peak_vram_mb"]
+    print(f"{'Peak VRAM (MB)':<28} | {v_mem:<14.1f} | {a_mem:<14.1f} | {t_mem:<16.1f} | {c_mem:<18.1f} | {c_mem - v_mem:+.1f} MB")
+    print("=" * 115)
 
     # Save output to JSON
     results_dir = os.path.join(os.path.dirname(__file__), "results")
@@ -389,13 +435,14 @@ def main():
         "parameters": n_params,
         "steps": num_steps,
         "vanilla_adamw": {k: v for k, v in results_vanilla.items() if k not in ("step_losses", "vvt_gears")},
-        "accelerator_ai_full": {k: v for k, v in results_accelerator.items() if k not in ("step_losses", "vvt_gears")},
-        "accelerator_ai_fast_physics": {k: v for k, v in results_fast_physics.items() if k not in ("step_losses", "vvt_gears")},
-        "comparison_fast_vs_vanilla": {
+        "accelerator_ai_full": {k: v for k, v in results_full.items() if k not in ("step_losses", "vvt_gears")},
+        "accelerator_ai_adaptive_turbo": {k: v for k, v in results_adaptive.items() if k not in ("step_losses", "vvt_gears")},
+        "accelerator_ai_cuda_graph_bf16": {k: v for k, v in results_cuda_graph.items() if k not in ("step_losses", "vvt_gears")},
+        "comparison_cuda_vs_vanilla": {
             "val_loss_reduction_pct": round(loss_delta, 2),
             "perplexity_ratio": round(ppl_ratio, 2),
-            "step_latency_delta_ms": round(f_lat - v_lat, 2),
-            "tokens_per_sec_throughput_ratio": round(f_tok / v_tok, 2),
+            "step_latency_delta_ms": round(lat_delta, 2),
+            "throughput_speedup_ratio": round(c_tok / v_tok, 2),
         }
     }
 
@@ -406,3 +453,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

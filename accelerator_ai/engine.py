@@ -11,11 +11,12 @@ from typing import List, Optional, Dict, Any, Tuple
 import logging
 import numpy as np
 
-from accelerator_ai.core.flow_packet import FlowPacket
+from accelerator_ai.core.flow_packet import FlowPacket, FlowPacketPool
 from accelerator_ai.core.shaft import DriveShaft
 from accelerator_ai.core.metrics import (
     EngineTelemetry,
     calculate_pyrometer_temp,
+    calculate_learning_torque,
 )
 from accelerator_ai.turbines.intake import IntakeTurbine
 from accelerator_ai.turbines.filter import AirFilter
@@ -31,7 +32,7 @@ from accelerator_ai.injectors.synthetic import SyntheticInjector
 from accelerator_ai.injectors.realworld import RealWorldReservoirInjector
 from accelerator_ai.injectors.shock import EntropyShockInjector
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
-from accelerator_ai.ecu.telemetry import TelemetryHub
+from accelerator_ai.ecu.telemetry import TelemetryHub, AsyncTelemetryHub
 from accelerator_ai.security.input_guard import InputGuard
 from accelerator_ai.config import EngineConfig
 from accelerator_ai.core.pipeline import (
@@ -67,6 +68,12 @@ class TurboLearningEngine:
         input_guard: Optional[InputGuard] = None,
         distributed_coordinator: Optional[Any] = None,
         fast_physics: Optional[bool] = None,
+        enable_cuda_graph: Optional[bool] = None,
+        adaptive_turbo: Optional[bool] = None,
+        enable_amp: Optional[bool] = None,
+        amp_dtype: Optional[str] = None,
+        enable_telemetry: Optional[bool] = None,
+        async_telemetry: Optional[bool] = None,
     ):
         self.model = model
         self.config = config or EngineConfig()
@@ -81,13 +88,46 @@ class TurboLearningEngine:
         resolved_telemetry = telemetry_interval if telemetry_interval is not None else self.config.telemetry_interval
         resolved_ft_mode = fault_tolerance_mode if fault_tolerance_mode is not None else self.config.fault_tolerance_mode
         resolved_fast_physics = fast_physics if fast_physics is not None else self.config.fast_physics
+        resolved_cuda_graph = enable_cuda_graph if enable_cuda_graph is not None else self.config.enable_cuda_graph
+        resolved_adaptive_turbo = adaptive_turbo if adaptive_turbo is not None else self.config.adaptive_turbo
+        resolved_enable_amp = enable_amp if enable_amp is not None else self.config.enable_amp
+        resolved_amp_dtype = amp_dtype if amp_dtype is not None else self.config.amp_dtype
+        resolved_enable_telemetry = enable_telemetry if enable_telemetry is not None else self.config.enable_telemetry
+        resolved_async_telemetry = async_telemetry if async_telemetry is not None else self.config.async_telemetry
 
         self.current_step: int = 0
         self.current_epoch: int = 0
         self.previous_loss: float = 1.0
         self.fault_tolerance_mode = resolved_ft_mode
         self.fast_physics = resolved_fast_physics
+        self.enable_cuda_graph = resolved_cuda_graph
+        self.adaptive_turbo = resolved_adaptive_turbo
+        self.adaptive_check_interval = self.config.adaptive_check_interval
+        self.enable_amp = resolved_enable_amp
+        self.amp_dtype = resolved_amp_dtype
+        self.enable_telemetry = resolved_enable_telemetry
+        self.async_telemetry = resolved_async_telemetry
         self.input_guard = input_guard or InputGuard()
+        self.packet_pool = FlowPacketPool(max_size=64)
+        self.loss_history: List[float] = []
+
+        # CUDA Graph pre-allocated state
+        self.cuda_graph: Optional[Any] = None
+        self.static_x: Optional[Any] = None
+        self.static_y: Optional[Any] = None
+        self.static_predictions: Optional[Any] = None
+        self.static_loss: Optional[Any] = None
+
+        # Propagate AMP configuration to PyTorch wrapper if supported
+        if hasattr(self.model, "enable_amp") and resolved_enable_amp:
+            self.model.enable_amp = resolved_enable_amp
+            self.model.amp_dtype = resolved_amp_dtype
+            if (
+                resolved_amp_dtype in ("float16", "fp16")
+                and hasattr(self.model, "torch")
+                and self.model.torch.cuda.is_available()
+            ):
+                self.model.scaler = self.model.torch.amp.GradScaler("cuda")
 
         # Distributed Master-ECU Coordinator (DDP / FSDP lockstep sync)
         if distributed_coordinator is not None:
@@ -132,7 +172,10 @@ class TurboLearningEngine:
 
         # Braided DNA Helices Controller & Telemetry Hub
         self.braided_ecu = BraidedDNAController(base_learning_rate=resolved_lr)
-        self.telemetry_hub = TelemetryHub()
+        if resolved_async_telemetry:
+            self.telemetry_hub = AsyncTelemetryHub(enabled=resolved_enable_telemetry)
+        else:
+            self.telemetry_hub = TelemetryHub(enabled=resolved_enable_telemetry)
 
         # Asynchronous Multi-Point Injectors (Tier 1: Auxiliary Injection Ring)
         self.injectors: List[AsyncDataInjector] = []
@@ -183,9 +226,122 @@ class TurboLearningEngine:
         """Triggers an immediate high-entropy chaos kick from the shock injector."""
         self.injection_roundabout.trigger_nos()
 
+    def capture_cuda_graph(self, x_batch: Any, y_batch: Any) -> None:
+        """
+        Captures the forward pass, backward pass, fused wastegate regulation,
+        and optimizer update into a persistent torch.cuda.CUDAGraph.
+        Eliminates CPU-GPU kernel launch and dispatch overhead.
+        """
+        try:
+            import torch
+        except ImportError:
+            logger.warning("PyTorch is not installed. Skipping CUDA Graph capture.")
+            return
+
+        if not torch.cuda.is_available():
+            logger.warning("CUDA device not available. Skipping CUDA Graph capture.")
+            return
+
+        device = "cuda"
+        if hasattr(self.model, "model") and hasattr(self.model.model, "parameters"):
+            try:
+                device = next(self.model.model.parameters()).device
+            except StopIteration:
+                pass
+
+        if hasattr(self.model, "enable_capturable_optimizer"):
+            self.model.enable_capturable_optimizer()
+
+        clean_x, clean_y = self.input_guard.sanitize(x_batch, y_batch)
+        if self.vvt:
+            clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
+
+        if not isinstance(clean_x, torch.Tensor):
+            clean_x = torch.tensor(clean_x, device=device)
+        else:
+            clean_x = clean_x.to(device)
+
+        if not isinstance(clean_y, torch.Tensor):
+            clean_y = torch.tensor(clean_y, device=device)
+        else:
+            clean_y = clean_y.to(device)
+
+        self.static_x = clean_x.clone().detach()
+        self.static_y = clean_y.clone().detach()
+
+        # Dedicated stream for capture to avoid legacy stream dependencies
+        capture_stream = torch.cuda.Stream(device=device)
+        capture_stream.wait_stream(torch.cuda.current_stream(device=device))
+
+        with torch.cuda.stream(capture_stream):
+            # Warm up iterations (populates memory pool)
+            for _ in range(3):
+                self.model.forward_and_loss(self.static_x, self.static_y)
+                if hasattr(self.model, "harvest_and_regulate_fused"):
+                    self.model.harvest_and_regulate_fused(
+                        threshold=self.wastegate.max_gradient_norm,
+                        boost_ratio=self.compressor.boost_ratio,
+                        enable_soft_clipping=self.wastegate.enable_soft_clipping,
+                    )
+                else:
+                    self.model.backward()
+                self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+
+        torch.cuda.current_stream(device=device).wait_stream(capture_stream)
+
+        # Graph Capture
+        self.cuda_graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(self.cuda_graph, stream=capture_stream):
+            self.static_predictions, _ = self.model.forward_and_loss(
+                self.static_x, self.static_y
+            )
+            if hasattr(self.model, "harvest_and_regulate_fused"):
+                self.model.harvest_and_regulate_fused(
+                    threshold=self.wastegate.max_gradient_norm,
+                    boost_ratio=self.compressor.boost_ratio,
+                    enable_soft_clipping=self.wastegate.enable_soft_clipping,
+                )
+            else:
+                self.model.backward()
+            self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+
+        self.static_loss_tensor = getattr(self.model, "last_loss_tensor", None)
+
+        logger.info(
+            "Captured persistent CUDA Graph for TurboLearningEngine on %s (batch shape: %s)",
+            device,
+            tuple(self.static_x.shape),
+        )
+
+    def _should_activate_turbo(self, current_step: int) -> bool:
+        """
+        Determines if the full physical turbine pipeline is needed or if minimal
+        zero-drag cruising should be used.
+        """
+        # 1. Early exploration / spool-up phase
+        if current_step <= 50:
+            return True
+
+        # 2. Periodic calibration check
+        if current_step % self.adaptive_check_interval == 0:
+            return True
+
+        # 3. Wastegate knock / explosive gradient relief active
+        if self.wastegate.open_pct > 0.0:
+            return True
+
+        # 4. Learning stall / loss plateau detection
+        if len(self.loss_history) >= 10:
+            recent_delta = self.loss_history[-10] - self.previous_loss
+            if recent_delta < 0.001:
+                return True
+
+        return False
+
     def step(self, x_batch: np.ndarray, y_batch: np.ndarray) -> CombustionResult:
         """
-        Executes a single physically closed turbocharged learning cycle via FluidPipeline.
+        Executes a single physically closed turbocharged learning cycle via FluidPipeline,
+        Zero-Sync CUDA Graph replay, or Adaptive Turbo Cruising.
         Protected by InputGuard and FaultTolerance bypass mode.
         """
         self.current_step += 1
@@ -207,6 +363,54 @@ class TurboLearningEngine:
                 self.vvt.current_batch_size = self.vvt.gears[min(sync_gear - 1, len(self.vvt.gears) - 1)]
                 self.braided_ecu.current_learning_rate = sync_lr
 
+        # 0. Zero-Sync CUDA Graph Replay (Peak Hardware Limit)
+        if (
+            self.cuda_graph is not None
+            and self.static_x is not None
+            and hasattr(clean_x, "shape")
+            and clean_x.shape == self.static_x.shape
+        ):
+            self.static_x.copy_(clean_x)
+            self.static_y.copy_(clean_y)
+            self.cuda_graph.replay()
+
+            if getattr(self, "static_loss_tensor", None) is not None:
+                loss_val = float(self.static_loss_tensor.item())
+            else:
+                loss_val = float(self.previous_loss)
+            self.previous_loss = loss_val
+            self.loss_history.append(loss_val)
+
+            # Background ECU kinetics on interval strides
+            if self.current_step % self.adaptive_check_interval == 0:
+                compressor_load = self.compressor.compute_reaction_load()
+                self.observation_roundabout.step_rotational_physics(
+                    learning_torque=0.5,
+                    compressor_load=compressor_load,
+                    dt=0.08,
+                )
+                self.observation_roundabout.weave_dna(
+                    step=self.current_step,
+                    learning_torque=0.5,
+                    boost_ratio=self.compressor.boost_ratio,
+                    injected_entropy=0.0,
+                    loss=loss_val,
+                )
+
+            fused_packet = self.packet_pool.acquire(
+                x=clean_x,
+                y=clean_y,
+                pressure=self.compressor.boost_ratio,
+            )
+            return CombustionResult(
+                loss=loss_val,
+                predictions=self.static_predictions,
+                fused_packet=fused_packet,
+                exhaust_energy=float(loss_val * self.compressor.boost_ratio),
+                air_fuel_ratio=14.7,
+                homogeneity_pct=100.0,
+            )
+
         if self.fast_physics:
             # High-throughput Fast-Physics Execution (Zero intermediate memory allocations)
             # 1. Discrete VVT gearbox micro-batching
@@ -217,17 +421,26 @@ class TurboLearningEngine:
             predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
 
             # 3. Exhaust harvesting & soft-clipping
-            fused_packet = FlowPacket(x=clean_x, y=clean_y, pressure=self.compressor.boost_ratio)
-            grad_norm, learning_torque = self.gradient_turbine.harvest_gradients(
-                model=self.model,
-                fused_packet=fused_packet,
-                boost_ratio=self.compressor.boost_ratio,
-            )
-            clipped_norm, was_vented = self.wastegate.inspect_and_regulate(
-                model=self.model,
-                gradient_norm=grad_norm,
-                boost_ratio=self.compressor.boost_ratio,
-            )
+            if hasattr(self.model, "harvest_and_regulate_fused"):
+                grad_norm, clipped_norm, was_vented = self.model.harvest_and_regulate_fused(
+                    threshold=self.wastegate.max_gradient_norm,
+                    boost_ratio=self.compressor.boost_ratio,
+                    enable_soft_clipping=self.wastegate.enable_soft_clipping,
+                )
+                raw_torque = calculate_learning_torque(grad_norm, self.compressor.boost_ratio)
+                learning_torque = float(raw_torque * self.gradient_turbine.shaft_efficiency)
+            else:
+                fused_packet = FlowPacket(x=clean_x, y=clean_y, pressure=self.compressor.boost_ratio)
+                grad_norm, learning_torque = self.gradient_turbine.harvest_gradients(
+                    model=self.model,
+                    fused_packet=fused_packet,
+                    boost_ratio=self.compressor.boost_ratio,
+                )
+                clipped_norm, was_vented = self.wastegate.inspect_and_regulate(
+                    model=self.model,
+                    gradient_norm=grad_norm,
+                    boost_ratio=self.compressor.boost_ratio,
+                )
 
             # 4. Drive shaft Newton kinetics & Braided DNA
             compressor_load = self.compressor.compute_reaction_load()
@@ -246,13 +459,54 @@ class TurboLearningEngine:
 
             # 5. Parameter update
             self.model.apply_updates(learning_rate=braid_status["learning_rate"])
-            self.previous_loss = float(loss)
+            loss_val = float(loss)
+            self.previous_loss = loss_val
+            self.loss_history.append(loss_val)
 
+            fused_packet = self.packet_pool.acquire(
+                x=clean_x,
+                y=clean_y,
+                pressure=self.compressor.boost_ratio,
+            )
             return CombustionResult(
-                loss=float(loss),
+                loss=loss_val,
                 predictions=predictions,
                 fused_packet=fused_packet,
-                exhaust_energy=float(loss * self.compressor.boost_ratio),
+                exhaust_energy=float(loss_val * self.compressor.boost_ratio),
+                air_fuel_ratio=14.7,
+                homogeneity_pct=100.0,
+            )
+
+        # Adaptive Turbo Cruising (Minimal zero-drag execution during smooth descent)
+        if self.adaptive_turbo and not self._should_activate_turbo(self.current_step):
+            if self.vvt:
+                clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
+
+            predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
+            if hasattr(self.model, "harvest_and_regulate_fused"):
+                grad_norm, clipped_norm, was_vented = self.model.harvest_and_regulate_fused(
+                    threshold=self.wastegate.max_gradient_norm,
+                    boost_ratio=self.compressor.boost_ratio,
+                    enable_soft_clipping=self.wastegate.enable_soft_clipping,
+                )
+            else:
+                self.model.backward()
+            self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+
+            loss_val = float(loss)
+            self.previous_loss = loss_val
+            self.loss_history.append(loss_val)
+
+            fused_packet = self.packet_pool.acquire(
+                x=clean_x,
+                y=clean_y,
+                pressure=self.compressor.boost_ratio,
+            )
+            return CombustionResult(
+                loss=loss_val,
+                predictions=predictions,
+                fused_packet=fused_packet,
+                exhaust_energy=float(loss_val),
                 air_fuel_ratio=14.7,
                 homogeneity_pct=100.0,
             )

@@ -9,6 +9,7 @@ Features:
 """
 
 from typing import Tuple, Any, Optional, Dict
+import contextlib
 import numpy as np
 
 
@@ -24,6 +25,8 @@ class PyTorchTurbineWrapper:
         optimizer: Any,
         loss_fn: Optional[Any] = None,
         enable_layer_hooks: bool = False,
+        enable_amp: bool = False,
+        amp_dtype: str = "bfloat16",
     ):
         try:
             import torch
@@ -39,6 +42,12 @@ class PyTorchTurbineWrapper:
         self.optimizer = optimizer
         self.loss_fn = loss_fn
         self.enable_layer_hooks = enable_layer_hooks
+        self.enable_amp = enable_amp
+        self.amp_dtype = amp_dtype.lower()
+
+        self.scaler = None
+        if self.enable_amp and self.amp_dtype in ("float16", "fp16") and self.torch.cuda.is_available():
+            self.scaler = self.torch.amp.GradScaler('cuda')
 
         self.last_loss_tensor: Optional[Any] = None
         self.last_sample_weights: Optional[np.ndarray] = None
@@ -46,6 +55,12 @@ class PyTorchTurbineWrapper:
 
         if self.enable_layer_hooks:
             self._register_hooks()
+
+    def enable_capturable_optimizer(self) -> None:
+        """Enables capturable=True on optimizer parameter groups for CUDA Graph execution."""
+        for param_group in self.optimizer.param_groups:
+            param_group["capturable"] = True
+
 
     def _register_hooks(self) -> None:
         """Registers backward hooks on parameter tensors to measure layer work."""
@@ -97,65 +112,73 @@ class PyTorchTurbineWrapper:
             self.optimizer.zero_grad()
         self.last_sample_weights = sample_weights
 
-        # 2. Forward pass execution
-        # If loss_fn is None, model is expected to accept targets and calculate internal loss (e.g. NanoGPT/LLMs)
-        loss = None
-        if self.loss_fn is None:
-            try:
-                predictions = self.model(x_tensor, y_tensor)
-            except TypeError:
-                try:
-                    predictions = self.model(x_tensor, targets=y_tensor)
-                except TypeError:
-                    predictions = self.model(x_tensor)
+        # Resolve AMP context
+        if self.enable_amp and device.type == "cuda":
+            torch_dtype = self.torch.bfloat16 if self.amp_dtype in ("bfloat16", "bf16") else self.torch.float16
+            amp_ctx = self.torch.amp.autocast(device_type="cuda", dtype=torch_dtype)
         else:
-            try:
-                predictions = self.model(x_tensor)
-            except TypeError:
-                predictions = self.model(x_tensor, y_tensor)
+            amp_ctx = contextlib.nullcontext()
 
-        # 3. Loss resolution (model-internal loss or explicit loss_fn)
-        if isinstance(predictions, tuple) and len(predictions) == 2:
-            logits, internal_loss = predictions
-            predictions = logits
-            loss = internal_loss
+        with amp_ctx:
+            # 2. Forward pass execution
+            loss = None
+            if self.loss_fn is None:
+                try:
+                    predictions = self.model(x_tensor, y_tensor)
+                except TypeError:
+                    try:
+                        predictions = self.model(x_tensor, targets=y_tensor)
+                    except TypeError:
+                        predictions = self.model(x_tensor)
+            else:
+                try:
+                    predictions = self.model(x_tensor)
+                except TypeError:
+                    predictions = self.model(x_tensor, y_tensor)
 
-        if loss is None:
-            if self.loss_fn is not None:
+            # 3. Loss resolution (model-internal loss or explicit loss_fn)
+            if isinstance(predictions, tuple) and len(predictions) == 2:
+                logits, internal_loss = predictions
+                predictions = logits
+                loss = internal_loss
+
+            if loss is None:
+                if self.loss_fn is not None:
+                    if sample_weights is not None:
+                        if isinstance(sample_weights, self.torch.Tensor):
+                            sw_tensor = sample_weights.to(device)
+                        else:
+                            sw_tensor = self.torch.from_numpy(sample_weights).float().to(device)
+
+                        if hasattr(self.loss_fn, "reduction"):
+                            orig_reduction = self.loss_fn.reduction
+                            self.loss_fn.reduction = "none"
+                            unreduced = self.loss_fn(predictions, y_tensor)
+                            self.loss_fn.reduction = orig_reduction
+                            if unreduced.ndim > 1:
+                                unreduced = unreduced.mean(dim=-1)
+                            loss = (unreduced * sw_tensor).sum() / (sw_tensor.sum() + 1e-8)
+                        else:
+                            base_loss = self.loss_fn(predictions, y_tensor)
+                            loss = base_loss * sw_tensor.mean()
+                    else:
+                        loss = self.loss_fn(predictions, y_tensor)
+                else:
+                    raise ValueError("No loss_fn provided and model did not compute an internal loss.")
+            else:
+                # Model computed internal loss, apply curriculum weighting if present
                 if sample_weights is not None:
                     if isinstance(sample_weights, self.torch.Tensor):
-                        sw_tensor = sample_weights.to(device)
+                        sw_mean = sample_weights.to(device).mean()
                     else:
-                        sw_tensor = self.torch.from_numpy(sample_weights).float().to(device)
-
-                    if hasattr(self.loss_fn, "reduction"):
-                        orig_reduction = self.loss_fn.reduction
-                        self.loss_fn.reduction = "none"
-                        unreduced = self.loss_fn(predictions, y_tensor)
-                        self.loss_fn.reduction = orig_reduction
-                        if unreduced.ndim > 1:
-                            unreduced = unreduced.mean(dim=-1)
-                        loss = (unreduced * sw_tensor).sum() / (sw_tensor.sum() + 1e-8)
-                    else:
-                        base_loss = self.loss_fn(predictions, y_tensor)
-                        loss = base_loss * sw_tensor.mean()
-                else:
-                    loss = self.loss_fn(predictions, y_tensor)
-            else:
-                raise ValueError("No loss_fn provided and model did not compute an internal loss.")
-        else:
-            # Model computed internal loss, apply curriculum weighting if present
-            if sample_weights is not None:
-                if isinstance(sample_weights, self.torch.Tensor):
-                    sw_mean = sample_weights.to(device).mean()
-                else:
-                    sw_mean = float(np.mean(sample_weights))
-                loss = loss * sw_mean
+                        sw_mean = float(np.mean(sample_weights))
+                    loss = loss * sw_mean
 
         self.last_loss_tensor = loss
 
-        pred_out = predictions.detach().cpu().numpy() if return_numpy_preds else predictions.detach()
-        loss_val = float(loss.item())
+        is_capturing = self.torch.cuda.is_current_stream_capturing() if self.torch.cuda.is_available() else False
+        pred_out = predictions.detach().cpu().numpy() if (return_numpy_preds and not is_capturing) else predictions.detach()
+        loss_val = 0.0 if is_capturing else float(loss.item())
         return pred_out, loss_val
 
     def backward(self) -> float:
@@ -163,7 +186,11 @@ class PyTorchTurbineWrapper:
         if self.last_loss_tensor is None:
             return 0.0
 
-        self.last_loss_tensor.backward()
+        if self.scaler is not None:
+            self.scaler.scale(self.last_loss_tensor).backward()
+            self.scaler.unscale_(self.optimizer)
+        else:
+            self.last_loss_tensor.backward()
 
         self._last_grads = [p.grad for p in self.model.parameters() if p.grad is not None]
         if not self._last_grads:
@@ -177,8 +204,86 @@ class PyTorchTurbineWrapper:
             total_sq = sum(g.data.norm(2).square() for g in self._last_grads)
             self._last_grad_norm_t = self.torch.sqrt(total_sq)
 
-        self._last_grad_norm = float(self._last_grad_norm_t.item())
+        is_capturing = self.torch.cuda.is_current_stream_capturing() if self.torch.cuda.is_available() else False
+        self._last_grad_norm = 0.0 if is_capturing else float(self._last_grad_norm_t.item())
         return self._last_grad_norm
+
+    def harvest_and_regulate_fused(
+        self,
+        threshold: float = 5.0,
+        boost_ratio: float = 1.0,
+        enable_soft_clipping: bool = True,
+    ) -> Tuple[float, float, bool]:
+        """
+        Fused on-device gradient harvesting and pneumatic wastegate regulation.
+        Performs backward pass, norm calculation, and tanh soft-clipping directly on GPU
+        in a single fused operation without host-device synchronization stalls.
+
+        Returns:
+            (raw_norm, clipped_norm, was_vented)
+        """
+        if self.last_loss_tensor is None:
+            return 0.0, 0.0, False
+
+        if self.scaler is not None:
+            self.scaler.scale(self.last_loss_tensor).backward()
+            self.scaler.unscale_(self.optimizer)
+        else:
+            self.last_loss_tensor.backward()
+
+        grads = [p.grad for p in self.model.parameters() if p.grad is not None]
+        if not grads:
+            return 0.0, 0.0, False
+
+        self._last_grads = grads
+        eff_threshold = threshold * boost_ratio
+
+        # Fused multi-tensor GPU norm reduction
+        if hasattr(self.torch, "_foreach_norm"):
+            norms = self.torch._foreach_norm(grads, 2)
+            norm_t = self.torch.linalg.vector_norm(self.torch.stack(norms))
+        else:
+            total_sq = sum(g.data.norm(2).square() for g in grads)
+            norm_t = self.torch.sqrt(total_sq)
+
+        self._last_grad_norm_t = norm_t
+        is_capturing = self.torch.cuda.is_current_stream_capturing() if self.torch.cuda.is_available() else False
+
+        if enable_soft_clipping:
+            scale_t = self.torch.tanh(eff_threshold / (norm_t + 1e-8))
+            if hasattr(self.torch, "_foreach_mul_"):
+                self.torch._foreach_mul_(grads, scale_t)
+            else:
+                scale_val = float(scale_t.item())
+                for g in grads:
+                    g.mul_(scale_val)
+
+            clipped_norm_t = norm_t * scale_t
+            if is_capturing:
+                raw_norm = 0.0
+                clipped_norm = 0.0
+                was_vented = False
+            else:
+                raw_norm = float(norm_t.item())
+                clipped_norm = float(clipped_norm_t.item())
+                was_vented = raw_norm > eff_threshold
+        else:
+            if is_capturing:
+                raw_norm = 0.0
+                clipped_norm = 0.0
+                was_vented = False
+            else:
+                raw_norm = float(norm_t.item())
+                if raw_norm > eff_threshold:
+                    self.torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=eff_threshold)
+                    clipped_norm = eff_threshold
+                    was_vented = True
+                else:
+                    clipped_norm = raw_norm
+                    was_vented = False
+
+        self._last_grad_norm = clipped_norm
+        return raw_norm, clipped_norm, was_vented
 
     def clip_gradients(self, max_norm: float) -> None:
         """Wastegate hard gradient clipping."""
@@ -217,4 +322,9 @@ class PyTorchTurbineWrapper:
         """Drive Shaft parameter update."""
         for param_group in self.optimizer.param_groups:
             param_group["lr"] = learning_rate
-        self.optimizer.step()
+        if self.scaler is not None:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+

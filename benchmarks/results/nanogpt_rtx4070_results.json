@@ -8,12 +8,12 @@
   "vanilla_adamw": {
     "name": "Vanilla AdamW",
     "steps": 500,
-    "total_wall_time_sec": 3.446,
-    "mean_latency_ms": 6.29,
-    "tokens_per_sec": 594369.2,
-    "final_train_loss": 2.3523,
-    "final_val_loss": 2.4013,
-    "final_perplexity": 11.04,
+    "total_wall_time_sec": 3.186,
+    "mean_latency_ms": 5.84,
+    "tokens_per_sec": 642899.7,
+    "final_train_loss": 2.3531,
+    "final_val_loss": 2.4002,
+    "final_perplexity": 11.03,
     "peak_vram_mb": 166.3,
     "val_checkpoints": [
       {
@@ -23,121 +23,164 @@
       },
       {
         "step": 100,
-        "val_loss": 3.2152974128723146,
-        "perplexity": 24.910699572255005
+        "val_loss": 3.215297448635101,
+        "perplexity": 24.910700463131054
       },
       {
         "step": 200,
-        "val_loss": 2.6905606746673585,
-        "perplexity": 14.739937913867672
+        "val_loss": 2.6905606627464294,
+        "perplexity": 14.739937738153918
       },
       {
         "step": 300,
-        "val_loss": 2.5372228741645815,
-        "perplexity": 12.644506779288683
+        "val_loss": 2.5372227787971497,
+        "perplexity": 12.644505573414603
       },
       {
         "step": 400,
-        "val_loss": 2.474982130527496,
-        "perplexity": 11.881494795157852
+        "val_loss": 2.4748525261878966,
+        "perplexity": 11.879955001655587
       },
       {
         "step": 499,
-        "val_loss": 2.4012781143188477,
-        "perplexity": 11.037274267649344
+        "val_loss": 2.4001809120178224,
+        "perplexity": 11.025170786123956
       }
     ]
   },
   "accelerator_ai_full": {
     "name": "AcceleratorAI (Full Fluid)",
     "steps": 500,
-    "total_wall_time_sec": 3.756,
-    "mean_latency_ms": 6.88,
-    "tokens_per_sec": 334236.3,
-    "final_train_loss": 2.2369,
-    "final_val_loss": 2.3131,
-    "final_perplexity": 10.11,
+    "total_wall_time_sec": 3.163,
+    "mean_latency_ms": 5.8,
+    "tokens_per_sec": 344507.7,
+    "final_train_loss": 2.2782,
+    "final_val_loss": 2.3406,
+    "final_perplexity": 10.39,
     "peak_vram_mb": 171.3,
     "val_checkpoints": [
       {
         "step": 0,
-        "val_loss": 3.753398084640503,
-        "perplexity": 42.665818009037324
+        "val_loss": 3.753398072719574,
+        "perplexity": 42.66581750042115
       },
       {
         "step": 100,
-        "val_loss": 2.757025420665741,
-        "perplexity": 15.752914892156998
+        "val_loss": 2.763076055049896,
+        "perplexity": 15.848518961615808
       },
       {
         "step": 200,
-        "val_loss": 2.5823776006698607,
-        "perplexity": 13.228553015379033
+        "val_loss": 2.5722533464431763,
+        "perplexity": 13.095299466215602
       },
       {
         "step": 300,
-        "val_loss": 2.506033718585968,
-        "perplexity": 12.256221904092095
+        "val_loss": 2.5203983545303346,
+        "perplexity": 12.433548637619344
       },
       {
         "step": 400,
-        "val_loss": 2.4062555551528932,
-        "perplexity": 11.092348598191458
+        "val_loss": 2.46248345375061,
+        "perplexity": 11.73391602296012
       },
       {
         "step": 499,
-        "val_loss": 2.313051223754883,
-        "perplexity": 10.10521092284869
+        "val_loss": 2.340626037120819,
+        "perplexity": 10.38773763692468
       }
     ]
   },
-  "accelerator_ai_fast_physics": {
-    "name": "AcceleratorAI (Fast-Physics)",
+  "accelerator_ai_adaptive_turbo": {
+    "name": "AcceleratorAI (Adaptive Turbo)",
     "steps": 500,
-    "total_wall_time_sec": 4.788,
-    "mean_latency_ms": 8.85,
-    "tokens_per_sec": 427722.0,
-    "final_train_loss": 1.823,
-    "final_val_loss": 1.9961,
-    "final_perplexity": 7.36,
+    "total_wall_time_sec": 3.186,
+    "mean_latency_ms": 5.86,
+    "tokens_per_sec": 340055.3,
+    "final_train_loss": 2.298,
+    "final_val_loss": 2.347,
+    "final_perplexity": 10.45,
     "peak_vram_mb": 171.3,
     "val_checkpoints": [
       {
         "step": 0,
-        "val_loss": 3.7450933694839477,
-        "perplexity": 42.31295777343592
+        "val_loss": 3.753398072719574,
+        "perplexity": 42.66581750042115
       },
       {
         "step": 100,
-        "val_loss": 2.5297563791275026,
-        "perplexity": 12.55044821305245
+        "val_loss": 2.7632318258285524,
+        "perplexity": 15.850987890043468
       },
       {
         "step": 200,
-        "val_loss": 2.3704012274742126,
-        "perplexity": 10.701685232964788
+        "val_loss": 2.5684910655021667,
+        "perplexity": 13.046123834893038
       },
       {
         "step": 300,
-        "val_loss": 2.2050147533416746,
-        "perplexity": 9.070385385363991
+        "val_loss": 2.510662090778351,
+        "perplexity": 12.313079738847456
       },
       {
         "step": 400,
-        "val_loss": 2.062988257408142,
-        "perplexity": 7.869450653657184
+        "val_loss": 2.461254858970642,
+        "perplexity": 11.719508647211306
       },
       {
         "step": 499,
-        "val_loss": 1.9961444437503815,
-        "perplexity": 7.360622027314339
+        "val_loss": 2.3469992756843565,
+        "perplexity": 10.45415258135846
       }
     ]
   },
-  "comparison_fast_vs_vanilla": {
-    "val_loss_reduction_pct": 16.87,
-    "perplexity_ratio": 1.5,
-    "step_latency_delta_ms": 2.56,
-    "tokens_per_sec_throughput_ratio": 0.72
+  "accelerator_ai_cuda_graph_bf16": {
+    "name": "AcceleratorAI (CUDA Graph + BF16)",
+    "steps": 500,
+    "total_wall_time_sec": 1.703,
+    "mean_latency_ms": 2.91,
+    "tokens_per_sec": 1202628.7,
+    "final_train_loss": 1.9205,
+    "final_val_loss": 2.0201,
+    "final_perplexity": 7.54,
+    "peak_vram_mb": 69.8,
+    "val_checkpoints": [
+      {
+        "step": 0,
+        "val_loss": 3.4260205268859862,
+        "perplexity": 30.75401414046134
+      },
+      {
+        "step": 100,
+        "val_loss": 2.524320602416992,
+        "perplexity": 12.482411861682806
+      },
+      {
+        "step": 200,
+        "val_loss": 2.3941610932350157,
+        "perplexity": 10.95900062196448
+      },
+      {
+        "step": 300,
+        "val_loss": 2.2567189812660216,
+        "perplexity": 9.551698396691531
+      },
+      {
+        "step": 400,
+        "val_loss": 2.1146535634994508,
+        "perplexity": 8.286714448428752
+      },
+      {
+        "step": 499,
+        "val_loss": 2.02011182308197,
+        "perplexity": 7.539167939521775
+      }
+    ]
+  },
+  "comparison_cuda_vs_vanilla": {
+    "val_loss_reduction_pct": 15.84,
+    "perplexity_ratio": 1.46,
+    "step_latency_delta_ms": -2.93,
+    "throughput_speedup_ratio": 1.87
   }
 }

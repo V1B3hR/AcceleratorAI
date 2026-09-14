@@ -183,3 +183,61 @@ class TokenFlowPacket(FlowPacket):
     @property
     def is_tokens(self) -> bool:
         return True
+
+
+class FlowPacketPool:
+    """
+    Object pool for recycling FlowPacket allocations and reducing GC churn
+    during high-frequency training steps.
+    """
+
+    def __init__(self, max_size: int = 64):
+        self.pool: list = []
+        self.max_size = max_size
+
+    def acquire(
+        self,
+        x: Any,
+        y: Any,
+        pressure: float = 1.0,
+        viscosity: float = 1.0,
+        temperature: float = 1.0,
+        phase: float = 0.0,
+        source: str = "intake",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> FlowPacket:
+        """Acquires a FlowPacket from the pool or allocates a new one."""
+        if self.pool:
+            pkt = self.pool.pop()
+            pkt.x = x
+            pkt.y = y
+            pkt.pressure = pressure
+            pkt.viscosity = viscosity
+            pkt.temperature = temperature
+            pkt.phase = phase
+            pkt.source = source
+            pkt.metadata = metadata or {}
+            return pkt
+        return FlowPacket(
+            x=x,
+            y=y,
+            pressure=pressure,
+            viscosity=viscosity,
+            temperature=temperature,
+            phase=phase,
+            source=source,
+            metadata=metadata or {},
+        )
+
+    def release(self, packet: FlowPacket) -> None:
+        """Releases a packet back to the pool, clearing tensor references to avoid retention."""
+        if len(self.pool) < self.max_size and isinstance(packet, FlowPacket):
+            packet.x = None
+            packet.y = None
+            packet.metadata = {}
+            self.pool.append(packet)
+
+    def clear(self) -> None:
+        """Clears all pooled instances."""
+        self.pool.clear()
+

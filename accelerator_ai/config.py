@@ -29,6 +29,15 @@ class EngineConfig:
     max_batch_size: int = 16384
     gears: List[int] = field(default_factory=lambda: [16, 32, 64])
 
+    # High-Performance Execution & Zero-Sync Pipeline Options
+    enable_cuda_graph: bool = False
+    adaptive_turbo: bool = True
+    adaptive_check_interval: int = 10
+    enable_amp: bool = False
+    amp_dtype: str = "bfloat16"
+    enable_telemetry: bool = True
+    async_telemetry: bool = False
+
     def __post_init__(self):
         self.validate()
 
@@ -53,6 +62,15 @@ class EngineConfig:
         if not self.gears or any(g <= 0 for g in self.gears):
             raise ConfigurationError(
                 f"gears must be a list of positive integers, got {self.gears}."
+            )
+        if self.adaptive_check_interval < 1:
+            raise ConfigurationError(
+                f"adaptive_check_interval must be >= 1, got {self.adaptive_check_interval}."
+            )
+        valid_amp = ("bfloat16", "float16", "bf16", "fp16")
+        if self.amp_dtype.lower() not in valid_amp:
+            raise ConfigurationError(
+                f"amp_dtype must be one of {valid_amp}, got '{self.amp_dtype}'."
             )
 
     def to_dict(self) -> Dict[str, Any]:
