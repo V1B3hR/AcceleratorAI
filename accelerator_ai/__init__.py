@@ -37,7 +37,17 @@ from accelerator_ai.core.pipeline import (
 from accelerator_ai.models.neural_core import PureNumPyMLP
 from accelerator_ai.models.torch_adapter import PyTorchTurbineWrapper
 from accelerator_ai.engine import TurboLearningEngine
-from accelerator_ai.security import InputGuard, ValidationError, CorruptedTensorError
+from accelerator_ai.config import EngineConfig
+from accelerator_ai.exceptions import (
+    AcceleratorAIError,
+    ConfigurationError,
+    SecurityValidationError,
+    ValidationError,
+    CorruptedTensorError,
+    FluidDynamicsError,
+    HardwareSynchronizationError,
+)
+from accelerator_ai.security import InputGuard
 from accelerator_ai.benchmarks.nanogpt import NanoGPT, GPTConfig
 
 __version__ = "0.5.0"
@@ -79,9 +89,15 @@ __all__ = [
     "PureNumPyMLP",
     "PyTorchTurbineWrapper",
     "TurboLearningEngine",
+    "EngineConfig",
     "InputGuard",
+    "AcceleratorAIError",
+    "ConfigurationError",
+    "SecurityValidationError",
     "ValidationError",
     "CorruptedTensorError",
+    "FluidDynamicsError",
+    "HardwareSynchronizationError",
     "NanoGPT",
     "GPTConfig",
 ]

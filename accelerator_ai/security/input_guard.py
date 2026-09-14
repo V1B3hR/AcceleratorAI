@@ -8,14 +8,7 @@ from typing import Tuple, Optional, Any, Dict
 import numpy as np
 
 
-class ValidationError(ValueError):
-    """Raised when input tensors fail critical structural validation."""
-    pass
-
-
-class CorruptedTensorError(ValueError):
-    """Raised when incoming data contains irrecoverable numerical corruptions."""
-    pass
+from accelerator_ai.exceptions import ValidationError, CorruptedTensorError
 
 
 class InputGuard:
@@ -30,11 +23,15 @@ class InputGuard:
         max_magnitude: float = 1e6,
         strict_mode: bool = False,
         allow_nan: bool = False,
+        max_batch_size: int = 16384,
+        max_tensor_bytes: int = 1024 * 1024 * 1024,
     ):
         self.expected_features = expected_features
         self.max_magnitude = max_magnitude
         self.strict_mode = strict_mode
         self.allow_nan = allow_nan
+        self.max_batch_size = max_batch_size
+        self.max_tensor_bytes = max_tensor_bytes
         self.total_screened_batches: int = 0
         self.total_rejected_batches: int = 0
         self.total_sanitized_samples: int = 0
@@ -60,7 +57,8 @@ class InputGuard:
         self.total_screened_batches += 1
 
         # 1. Native PyTorch Tensor Fast Path (Zero host-device copies)
-        if type(x).__module__.startswith("torch"):
+        is_torch = type(x).__module__.startswith("torch") or (hasattr(x, "is_cuda") and not type(x).__module__.startswith("numpy"))
+        if is_torch:
             x_t = x.unsqueeze(0) if x.ndim == 1 else x
             if x_t.ndim != 2:
                 self.total_rejected_batches += 1
@@ -73,6 +71,20 @@ class InputGuard:
                 self.total_rejected_batches += 1
                 raise ValidationError("Input X contains 0 samples (empty batch).")
 
+            if batch_size > self.max_batch_size:
+                self.total_rejected_batches += 1
+                raise ValidationError(
+                    f"Batch size {batch_size} exceeds maximum safety limit {self.max_batch_size}."
+                )
+
+            if hasattr(x_t, "element_size") and hasattr(x_t, "nelement"):
+                total_bytes = x_t.element_size() * x_t.nelement()
+                if total_bytes > self.max_tensor_bytes:
+                    self.total_rejected_batches += 1
+                    raise ValidationError(
+                        f"Input X memory footprint ({total_bytes} bytes) exceeds maximum limit ({self.max_tensor_bytes} bytes)."
+                    )
+
             if self.expected_features is not None and num_features != self.expected_features:
                 self.total_rejected_batches += 1
                 raise ValidationError(
@@ -84,6 +96,11 @@ class InputGuard:
                     self.total_rejected_batches += 1
                     raise ValidationError(
                         f"Batch size mismatch: X has {batch_size} samples, but Y has {len(y)} samples."
+                    )
+                if hasattr(y, "device") and hasattr(x_t, "device") and x_t.device != y.device:
+                    self.total_rejected_batches += 1
+                    raise ValidationError(
+                        f"Device mismatch: X is on {x_t.device}, but Y is on {y.device}."
                     )
 
             if hasattr(x_t, "is_floating_point") and not x_t.is_floating_point():
@@ -120,6 +137,18 @@ class InputGuard:
         if batch_size == 0:
             self.total_rejected_batches += 1
             raise ValidationError("Input X contains 0 samples (empty batch).")
+
+        if batch_size > self.max_batch_size:
+            self.total_rejected_batches += 1
+            raise ValidationError(
+                f"Batch size {batch_size} exceeds maximum safety limit {self.max_batch_size}."
+            )
+
+        if x_arr.nbytes > self.max_tensor_bytes:
+            self.total_rejected_batches += 1
+            raise ValidationError(
+                f"Input X memory footprint ({x_arr.nbytes} bytes) exceeds maximum limit ({self.max_tensor_bytes} bytes)."
+            )
 
         if self.expected_features is not None and num_features != self.expected_features:
             self.total_rejected_batches += 1

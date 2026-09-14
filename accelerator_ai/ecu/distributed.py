@@ -32,10 +32,12 @@ class DistributedECUCoordinator:
         master_rank: int = 0,
         sync_interval: int = 1,
         use_cuda_stream: bool = False,
+        timeout_seconds: float = 10.0,
     ):
         self.master_rank = master_rank
         self.sync_interval = max(1, sync_interval)
         self.use_cuda_stream = use_cuda_stream
+        self.timeout_seconds = timeout_seconds
         self._is_distributed: bool = False
         self._rank: int = 0
         self._world_size: int = 1
@@ -146,13 +148,25 @@ class DistributedECUCoordinator:
                 state_tensor[2] = 1.0 if wastegate_open else 0.0
                 state_tensor[3] = 1.0 if shock_fired else 0.0
 
-            # Master-to-workers collective broadcast (optionally on isolated CUDA stream)
+            # Master-to-workers collective broadcast with timeout protection
+            import datetime
+            timeout_delta = datetime.timedelta(seconds=self.timeout_seconds)
+
+            def _do_broadcast():
+                try:
+                    work = dist.broadcast(state_tensor, src=self.master_rank, async_op=True)
+                    if hasattr(work, "wait"):
+                        work.wait(timeout_delta)
+                except (TypeError, ValueError):
+                    # Fallback for environments / mocks where async_op is not accepted
+                    dist.broadcast(state_tensor, src=self.master_rank)
+
             if self._cuda_stream is not None:
                 with torch.cuda.stream(self._cuda_stream):
-                    dist.broadcast(state_tensor, src=self.master_rank)
+                    _do_broadcast()
                 torch.cuda.current_stream().wait_stream(self._cuda_stream)
             else:
-                dist.broadcast(state_tensor, src=self.master_rank)
+                _do_broadcast()
 
             sync_gear = int(round(state_tensor[0].item()))
             sync_lr = float(state_tensor[1].item())

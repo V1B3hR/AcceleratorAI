@@ -235,8 +235,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     appendLog(`[KICK] ⚡ CHAOS SHOCK INJECTED! Non-linear perturbation applied. Local minimum shattered.`, 'text-red');
 
+    // Extract auth token if provided in URL (e.g. ?token=XYZ)
+    const urlParams = new URLSearchParams(window.location.search);
+    const cockpitToken = urlParams.get('token') || '';
+    const authHeaders = cockpitToken ? { 'X-Cockpit-Token': cockpitToken } : {};
+    const tokenQuery = cockpitToken ? `?token=${encodeURIComponent(cockpitToken)}` : '';
+
     // Notify backend if running with live server
-    fetch('/api/action/nos', { method: 'POST' }).catch(() => {});
+    fetch('/api/action/nos' + tokenQuery, { method: 'POST', headers: authHeaders }).catch(() => {});
 
     setTimeout(() => { state.shockFired = false; }, 400);
   }
@@ -248,9 +254,15 @@ document.addEventListener('DOMContentLoaded', () => {
     state.boostTarget = parseFloat(e.target.value);
     labelBoostTarget.textContent = `${state.boostTarget.toFixed(1)} PSI`;
     appendLog(`[ECU] Manifold Target Boost adjusted to ${state.boostTarget.toFixed(1)} PSI`, 'text-cyan');
-    fetch('/api/action/boost', {
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const cockpitToken = urlParams.get('token') || '';
+    const authHeaders = cockpitToken ? { 'X-Cockpit-Token': cockpitToken } : {};
+    const tokenQuery = cockpitToken ? `?token=${encodeURIComponent(cockpitToken)}` : '';
+
+    fetch('/api/action/boost' + tokenQuery, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify({ boost_psi: state.boostTarget }),
     }).catch(() => {});
   });
@@ -267,10 +279,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Telemetry Connection (SSE + REST with automatic fallback)
   function connectTelemetryStream() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const cockpitToken = urlParams.get('token') || '';
+    const tokenQuery = cockpitToken ? `?token=${encodeURIComponent(cockpitToken)}` : '';
+
     // 1. Try Server-Sent Events (SSE)
     if (window.EventSource) {
       try {
-        const evtSource = new EventSource('/api/stream');
+        const evtSource = new EventSource('/api/stream' + tokenQuery);
         evtSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -293,8 +309,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function startHttpPolling() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const cockpitToken = urlParams.get('token') || '';
+    const authHeaders = cockpitToken ? { 'X-Cockpit-Token': cockpitToken } : {};
+    const tokenQuery = cockpitToken ? `?token=${encodeURIComponent(cockpitToken)}` : '';
+
     setInterval(() => {
-      fetch('/api/telemetry')
+      fetch('/api/telemetry' + tokenQuery, { headers: authHeaders })
         .then(res => res.json())
         .then(data => {
           if (data && data.step) {

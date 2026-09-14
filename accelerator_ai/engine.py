@@ -33,6 +33,7 @@ from accelerator_ai.injectors.shock import EntropyShockInjector
 from accelerator_ai.ecu.braided_controller import BraidedDNAController
 from accelerator_ai.ecu.telemetry import TelemetryHub
 from accelerator_ai.security.input_guard import InputGuard
+from accelerator_ai.config import EngineConfig
 from accelerator_ai.core.pipeline import (
     FluidPipeline,
     ExpressCoreRoundabout,
@@ -53,25 +54,39 @@ class TurboLearningEngine:
     def __init__(
         self,
         model: Any,
-        base_learning_rate: float = 0.015,
-        target_boost_psi: float = 14.7,
-        shaft_inertia: float = 0.08,
-        enable_default_injectors: bool = True,
+        config: Optional[EngineConfig] = None,
+        base_learning_rate: Optional[float] = None,
+        target_boost_psi: Optional[float] = None,
+        shaft_inertia: Optional[float] = None,
+        enable_default_injectors: Optional[bool] = None,
         injectors: Optional[List[AsyncDataInjector]] = None,
-        enable_sequential_turbo: bool = True,
-        enable_vvt: bool = True,
-        telemetry_interval: int = 1,
-        fault_tolerance_mode: bool = True,
+        enable_sequential_turbo: Optional[bool] = None,
+        enable_vvt: Optional[bool] = None,
+        telemetry_interval: Optional[int] = None,
+        fault_tolerance_mode: Optional[bool] = None,
         input_guard: Optional[InputGuard] = None,
         distributed_coordinator: Optional[Any] = None,
-        fast_physics: bool = False,
+        fast_physics: Optional[bool] = None,
     ):
         self.model = model
+        self.config = config or EngineConfig()
+
+        # Resolve parameters from config or explicit overrides
+        resolved_lr = base_learning_rate if base_learning_rate is not None else self.config.base_learning_rate
+        resolved_boost = target_boost_psi if target_boost_psi is not None else self.config.target_boost_psi
+        resolved_inertia = shaft_inertia if shaft_inertia is not None else self.config.shaft_inertia
+        resolved_def_inj = enable_default_injectors if enable_default_injectors is not None else self.config.enable_default_injectors
+        resolved_seq_turbo = enable_sequential_turbo if enable_sequential_turbo is not None else self.config.enable_sequential_turbo
+        resolved_vvt = enable_vvt if enable_vvt is not None else self.config.enable_vvt
+        resolved_telemetry = telemetry_interval if telemetry_interval is not None else self.config.telemetry_interval
+        resolved_ft_mode = fault_tolerance_mode if fault_tolerance_mode is not None else self.config.fault_tolerance_mode
+        resolved_fast_physics = fast_physics if fast_physics is not None else self.config.fast_physics
+
         self.current_step: int = 0
         self.current_epoch: int = 0
         self.previous_loss: float = 1.0
-        self.fault_tolerance_mode = fault_tolerance_mode
-        self.fast_physics = fast_physics
+        self.fault_tolerance_mode = resolved_ft_mode
+        self.fast_physics = resolved_fast_physics
         self.input_guard = input_guard or InputGuard()
 
         # Distributed Master-ECU Coordinator (DDP / FSDP lockstep sync)
@@ -83,7 +98,7 @@ class TurboLearningEngine:
 
         # Physical Mechanical Drive Shaft
         self.shaft = DriveShaft(
-            inertia=shaft_inertia,
+            inertia=resolved_inertia,
             idle_rpm=800.0,
             friction_coeff=0.012,
         )
@@ -92,32 +107,38 @@ class TurboLearningEngine:
         self.intake = IntakeTurbine()
         self.filter = AirFilter()
         self.compressor = CompressorTurbine(shaft=self.shaft)
+        if resolved_boost != 14.7:
+            self.compressor.set_boost(1.0 + (resolved_boost / 14.7))
         self.intercooler = Intercooler()
         self.combustion = CombustionChamber()
         self.gradient_turbine = GradientTurbine(shaft=self.shaft, enable_twin_scroll=True)
         self.wastegate = WastegateValve()
 
         # Sequential Turbocharging (HP fast spool + LP compound boost)
-        self.enable_sequential_turbo = enable_sequential_turbo
-        self.sequential_turbo = SequentialTurboSystem() if enable_sequential_turbo else None
+        self.enable_sequential_turbo = resolved_seq_turbo
+        self.sequential_turbo = SequentialTurboSystem() if resolved_seq_turbo else None
 
         # Variable Valve Timing (Dynamic cam phasing & micro-batch sizing)
-        self.enable_vvt = enable_vvt
-        self.vvt = VariableValveTiming(base_batch_size=32) if enable_vvt else None
+        self.enable_vvt = resolved_vvt
+        self.vvt = (
+            VariableValveTiming(base_batch_size=self.config.gears[1] if len(self.config.gears) > 1 else 32, gears=self.config.gears)
+            if resolved_vvt
+            else None
+        )
 
         # Mount compressor and gradient turbine to common drive shaft
         self.compressor.attach_shaft(self.shaft)
         self.gradient_turbine.attach_shaft(self.shaft)
 
         # Braided DNA Helices Controller & Telemetry Hub
-        self.braided_ecu = BraidedDNAController(base_learning_rate=base_learning_rate)
+        self.braided_ecu = BraidedDNAController(base_learning_rate=resolved_lr)
         self.telemetry_hub = TelemetryHub()
 
         # Asynchronous Multi-Point Injectors (Tier 1: Auxiliary Injection Ring)
         self.injectors: List[AsyncDataInjector] = []
         if injectors:
             self.injectors.extend(injectors)
-        elif enable_default_injectors:
+        elif resolved_def_inj:
             self.injectors.append(SyntheticInjector(batch_size=6))
             self.injectors.append(RealWorldReservoirInjector(batch_size=6))
             self.injectors.append(EntropyShockInjector(batch_size=4, threshold=0.85))
@@ -150,7 +171,7 @@ class TurboLearningEngine:
             injection_roundabout=self.injection_roundabout,
             observation_roundabout=self.observation_roundabout,
             telemetry_hub=self.telemetry_hub,
-            telemetry_interval=telemetry_interval,
+            telemetry_interval=resolved_telemetry,
         )
 
     @property
@@ -247,6 +268,44 @@ class TurboLearningEngine:
             self.previous_loss = res.loss
             return res
         except Exception as e:
+            is_oom = "OutOfMemory" in type(e).__name__ or "out of memory" in str(e).lower()
+            if is_oom:
+                logger.warning(
+                    "TurboLearningEngine step %d encountered OutOfMemoryError! "
+                    "Executing emergency CUDA memory flush and VVT downshift to Gear 1.",
+                    self.current_step,
+                )
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+
+                if self.vvt:
+                    self.vvt.current_gear = 1
+                    self.vvt.current_batch_size = self.vvt.gears[0]
+                    clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
+
+                try:
+                    predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
+                    self.model.backward()
+                    self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+                    self.previous_loss = float(loss)
+                    fallback_packet = FlowPacket(x=clean_x, y=clean_y, pressure=1.0)
+                    return CombustionResult(
+                        loss=float(loss),
+                        predictions=predictions,
+                        fused_packet=fallback_packet,
+                        exhaust_energy=float(loss),
+                        air_fuel_ratio=14.7,
+                        homogeneity_pct=100.0,
+                    )
+                except Exception as retry_err:
+                    logger.error("Emergency micro-batch retry also failed: %s", retry_err)
+                    if not self.fault_tolerance_mode:
+                        raise
+
             if not self.fault_tolerance_mode:
                 raise
             logger.warning(
