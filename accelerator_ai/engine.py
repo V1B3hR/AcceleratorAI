@@ -45,6 +45,13 @@ from accelerator_ai.core.pipeline import (
 logger = logging.getLogger("accelerator_ai.engine")
 
 
+# Hierarchical Turbine Activation Levels
+TURBO_LEVEL_CRUISE: int = 1      # Minimal path: zero-drag forward/backward/update
+TURBO_LEVEL_REGULATED: int = 2   # Minimal path + fused on-device wastegate soft-clipping
+TURBO_LEVEL_RESONANT: int = 3    # Regulated + VVT dynamic gearing + Braided DNA modulation
+TURBO_LEVEL_FULL: int = 4        # Full FluidPipeline with 3 roundabout tiers & auxiliary injectors
+
+
 class TurboLearningEngine:
     """
     Orchestrates the entire turbocharged AI learning cycle with physical shaft inertia,
@@ -60,16 +67,17 @@ class TurboLearningEngine:
         target_boost_psi: Optional[float] = None,
         shaft_inertia: Optional[float] = None,
         enable_default_injectors: Optional[bool] = None,
-        injectors: Optional[List[AsyncDataInjector]] = None,
         enable_sequential_turbo: Optional[bool] = None,
         enable_vvt: Optional[bool] = None,
         telemetry_interval: Optional[int] = None,
         fault_tolerance_mode: Optional[bool] = None,
-        input_guard: Optional[InputGuard] = None,
-        distributed_coordinator: Optional[Any] = None,
         fast_physics: Optional[bool] = None,
+        input_guard: Optional[InputGuard] = None,
+        injectors: Optional[List[AsyncDataInjector]] = None,
+        distributed_coordinator: Optional[Any] = None,
         enable_cuda_graph: Optional[bool] = None,
         adaptive_turbo: Optional[bool] = None,
+        adaptive_check_interval: Optional[int] = None,
         enable_amp: Optional[bool] = None,
         amp_dtype: Optional[str] = None,
         enable_telemetry: Optional[bool] = None,
@@ -90,10 +98,14 @@ class TurboLearningEngine:
         resolved_fast_physics = fast_physics if fast_physics is not None else self.config.fast_physics
         resolved_cuda_graph = enable_cuda_graph if enable_cuda_graph is not None else self.config.enable_cuda_graph
         resolved_adaptive_turbo = adaptive_turbo if adaptive_turbo is not None else self.config.adaptive_turbo
+        resolved_check_interval = adaptive_check_interval if adaptive_check_interval is not None else self.config.adaptive_check_interval
         resolved_enable_amp = enable_amp if enable_amp is not None else self.config.enable_amp
         resolved_amp_dtype = amp_dtype if amp_dtype is not None else self.config.amp_dtype
         resolved_enable_telemetry = enable_telemetry if enable_telemetry is not None else self.config.enable_telemetry
         resolved_async_telemetry = async_telemetry if async_telemetry is not None else self.config.async_telemetry
+        resolved_auto_detect_gears = self.config.auto_detect_gears
+        resolved_filter_cache = self.config.filter_cache_window
+        resolved_hierarchical_turbo = self.config.hierarchical_turbo
 
         self.current_step: int = 0
         self.current_epoch: int = 0
@@ -102,7 +114,8 @@ class TurboLearningEngine:
         self.fast_physics = resolved_fast_physics
         self.enable_cuda_graph = resolved_cuda_graph
         self.adaptive_turbo = resolved_adaptive_turbo
-        self.adaptive_check_interval = self.config.adaptive_check_interval
+        self.adaptive_check_interval = resolved_check_interval
+        self.hierarchical_turbo = resolved_hierarchical_turbo
         self.enable_amp = resolved_enable_amp
         self.amp_dtype = resolved_amp_dtype
         self.enable_telemetry = resolved_enable_telemetry
@@ -145,7 +158,7 @@ class TurboLearningEngine:
 
         # Core Turbines (Tier 0: Express Core Roundabout)
         self.intake = IntakeTurbine()
-        self.filter = AirFilter()
+        self.filter = AirFilter(cache_window=resolved_filter_cache)
         self.compressor = CompressorTurbine(shaft=self.shaft)
         if resolved_boost != 14.7:
             self.compressor.set_boost(1.0 + (resolved_boost / 14.7))
@@ -161,7 +174,11 @@ class TurboLearningEngine:
         # Variable Valve Timing (Dynamic cam phasing & micro-batch sizing)
         self.enable_vvt = resolved_vvt
         self.vvt = (
-            VariableValveTiming(base_batch_size=self.config.gears[1] if len(self.config.gears) > 1 else 32, gears=self.config.gears)
+            VariableValveTiming(
+                base_batch_size=self.config.gears[1] if len(self.config.gears) > 1 else 32,
+                gears=None if resolved_auto_detect_gears else self.config.gears,
+                auto_detect_hardware=resolved_auto_detect_gears,
+            )
             if resolved_vvt
             else None
         )
@@ -313,30 +330,44 @@ class TurboLearningEngine:
             tuple(self.static_x.shape),
         )
 
-    def _should_activate_turbo(self, current_step: int) -> bool:
+    def _get_turbo_level(self, current_step: int) -> int:
         """
-        Determines if the full physical turbine pipeline is needed or if minimal
-        zero-drag cruising should be used.
+        Determines the hierarchical turbine activation level (1 to 4):
+          Level 1: Minimal Cruise (zero-drag forward/backward/update)
+          Level 2: Regulated (fused on-device soft-clipping wastegate)
+          Level 3: Resonant (VVT dynamic gearing + Braided DNA modulation)
+          Level 4: Full Fluid Roundabout Pipeline (all 3 tiers + auxiliary injectors)
         """
-        # 1. Early exploration / spool-up phase
+        # 1. Early exploration / spool-up phase -> Full boost
         if current_step <= 50:
-            return True
+            return TURBO_LEVEL_FULL
 
-        # 2. Periodic calibration check
+        # 2. Periodic calibration check -> Full boost
         if current_step % self.adaptive_check_interval == 0:
-            return True
+            return TURBO_LEVEL_FULL
 
-        # 3. Wastegate knock / explosive gradient relief active
+        # 3. Wastegate knock / explosive gradient relief active -> Full relief
         if self.wastegate.open_pct > 0.0:
-            return True
+            return TURBO_LEVEL_FULL
 
-        # 4. Learning stall / loss plateau detection
+        # 4. Learning stall / loss plateau detection -> Full boost
         if len(self.loss_history) >= 10:
             recent_delta = self.loss_history[-10] - self.previous_loss
             if recent_delta < 0.001:
-                return True
+                return TURBO_LEVEL_FULL
 
-        return False
+        # 5. Non-linear resonance modulation check
+        if current_step % 3 == 0:
+            return TURBO_LEVEL_RESONANT
+
+        # 6. Smooth cruising
+        return TURBO_LEVEL_CRUISE
+
+    def _should_activate_turbo(self, current_step: int) -> bool:
+        """
+        Maintains backwards compatibility for full turbine pipeline activation.
+        """
+        return self._get_turbo_level(current_step) >= TURBO_LEVEL_FULL
 
     def step(self, x_batch: np.ndarray, y_batch: np.ndarray) -> CombustionResult:
         """
@@ -477,21 +508,49 @@ class TurboLearningEngine:
                 homogeneity_pct=100.0,
             )
 
-        # Adaptive Turbo Cruising (Minimal zero-drag execution during smooth descent)
+        # Adaptive Turbo Cruising / Hierarchical Execution
         if self.adaptive_turbo and not self._should_activate_turbo(self.current_step):
+            turbo_level = self._get_turbo_level(self.current_step) if self.hierarchical_turbo else TURBO_LEVEL_CRUISE
+
             if self.vvt:
                 clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
 
             predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
-            if hasattr(self.model, "harvest_and_regulate_fused"):
+
+            # Level 2+: Fused On-Device Wastegate Regulation
+            if turbo_level >= TURBO_LEVEL_REGULATED and hasattr(self.model, "harvest_and_regulate_fused"):
                 grad_norm, clipped_norm, was_vented = self.model.harvest_and_regulate_fused(
                     threshold=self.wastegate.max_gradient_norm,
                     boost_ratio=self.compressor.boost_ratio,
                     enable_soft_clipping=self.wastegate.enable_soft_clipping,
                 )
+                if was_vented:
+                    self.wastegate.open_pct = 50.0
+                else:
+                    self.wastegate.open_pct = max(0.0, self.wastegate.open_pct * 0.8)
             else:
                 self.model.backward()
-            self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
+                self.wastegate.open_pct = max(0.0, self.wastegate.open_pct * 0.8)
+
+            # Level 3+: Resonant DNA & Rotational Kinetics Modulation
+            lr_to_apply = self.braided_ecu.current_learning_rate
+            if turbo_level >= TURBO_LEVEL_RESONANT:
+                compressor_load = self.compressor.compute_reaction_load()
+                self.observation_roundabout.step_rotational_physics(
+                    learning_torque=0.5,
+                    compressor_load=compressor_load,
+                    dt=0.08,
+                )
+                braid_status, _ = self.observation_roundabout.weave_dna(
+                    step=self.current_step,
+                    learning_torque=0.5,
+                    boost_ratio=self.compressor.boost_ratio,
+                    injected_entropy=0.0,
+                    loss=float(loss),
+                )
+                lr_to_apply = braid_status["learning_rate"]
+
+            self.model.apply_updates(learning_rate=lr_to_apply)
 
             loss_val = float(loss)
             self.previous_loss = loss_val

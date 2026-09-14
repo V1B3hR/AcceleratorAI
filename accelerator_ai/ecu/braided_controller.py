@@ -62,6 +62,11 @@ class BraidedDNAController:
         self.current_learning_rate: float = base_learning_rate
         self.total_phase_shocks: int = 0
 
+        # Pre-allocated zero-churn buffers for resonance computation
+        self._triu_idx = np.triu_indices(4, k=1)
+        self._phases_buf = np.zeros(4, dtype=np.float32)
+        self._weights_buf = np.zeros(4, dtype=np.float32)
+
     def update(
         self,
         step: int,
@@ -105,19 +110,25 @@ class BraidedDNAController:
         self.phase_inj = (self.phase_inj + omega_inj) % (2.0 * np.pi)
         self.phase_therm = (self.phase_therm + omega_therm) % (2.0 * np.pi)
 
-        # 3. Compute 4-Strand Pairwise Interference — vectorized
-        phases = np.array([self.phase_grad, self.phase_press, self.phase_inj, self.phase_therm])
-        weights = np.array([self.val_grad, self.val_press, self.val_inj, self.val_therm])
+        # 3. Compute 4-Strand Pairwise Interference with pre-allocated buffers
+        self._phases_buf[0] = self.phase_grad
+        self._phases_buf[1] = self.phase_press
+        self._phases_buf[2] = self.phase_inj
+        self._phases_buf[3] = self.phase_therm
+
+        self._weights_buf[0] = self.val_grad
+        self._weights_buf[1] = self.val_press
+        self._weights_buf[2] = self.val_inj
+        self._weights_buf[3] = self.val_therm
 
         # Pairwise phase difference matrix (upper triangle)
-        phase_diff = np.subtract.outer(phases, phases)
+        phase_diff = np.subtract.outer(self._phases_buf, self._phases_buf)
         cos_diff = np.cos(phase_diff)
-        weight_sum = np.add.outer(weights, weights)
+        weight_sum = np.add.outer(self._weights_buf, self._weights_buf)
         weighted_interf = cos_diff * (0.5 + 0.5 * weight_sum)
 
-        # Extract upper triangle (6 unique pairs)
-        triu_idx = np.triu_indices(4, k=1)
-        pairwise_values = weighted_interf[triu_idx]
+        # Extract upper triangle (6 unique pairs) using cached indices
+        pairwise_values = weighted_interf[self._triu_idx]
 
         # Raw Helical Resonance Index H in [-1.0, 1.0]
         self.resonance_index = float(np.mean(pairwise_values))

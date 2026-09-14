@@ -190,5 +190,116 @@ class TestPyTorchAdapterAndCUDAGraph(unittest.TestCase):
         self.assertEqual(engine.current_step, 1)
 
 
+class TestPhase3AdvancedOptimizations(unittest.TestCase):
+
+    def test_vvt_detect_optimal_gears(self):
+        from accelerator_ai.turbines.vvt import VariableValveTiming
+        gears = VariableValveTiming.detect_optimal_gears()
+        self.assertIsInstance(gears, tuple)
+        self.assertGreaterEqual(len(gears), 3)
+        self.assertTrue(all(g > 0 for g in gears))
+        self.assertEqual(gears, tuple(sorted(gears)))
+
+        vvt = VariableValveTiming(auto_detect_hardware=True)
+        self.assertEqual(vvt.gears, gears)
+
+    def test_vvt_predictive_shifting(self):
+        from accelerator_ai.turbines.vvt import VariableValveTiming
+        vvt = VariableValveTiming(gears=(16, 32, 64))
+        # Initial gear is Gear 2 (batch 32)
+        self.assertEqual(vvt.current_gear, 2)
+
+        # 1. Accelerating descent (loss_delta = 0.08) -> Predictive upshift to Gear 3
+        batch_size, telem = vvt.update(
+            shaft_rpm=2000.0,
+            boost_psi=10.0,
+            loss_delta=0.08,
+        )
+        self.assertEqual(vvt.current_gear, 3)
+        self.assertEqual(batch_size, 64)
+        self.assertTrue(telem["predictive_shifted"])
+
+        # 2. Loss destabilization / spike (loss_delta = -0.05) -> Predictive downshift to Gear 1 (agile recovery)
+        batch_size, telem = vvt.update(
+            shaft_rpm=2000.0,
+            boost_psi=10.0,
+            loss_delta=-0.05,
+        )
+        self.assertEqual(vvt.current_gear, 1)
+        self.assertEqual(batch_size, 16)
+        self.assertTrue(telem["predictive_shifted"])
+
+    def test_cached_air_filter_bounds(self):
+        import torch
+        from accelerator_ai.turbines.filter import AirFilter
+        from accelerator_ai.core.flow_packet import FlowPacket
+
+        af = AirFilter(cache_window=5, fast_mode=False)
+        x = torch.randn(16, 8)
+        packet = FlowPacket(x=x, y=None)
+
+        # Step 0: computes and caches
+        af.process(packet)
+        self.assertIsNotNone(af._cached_mean)
+        self.assertIsNotNone(af._cached_bound)
+        initial_mean = af._cached_mean.clone()
+
+        # Step 1: reuses cached mean
+        x2 = torch.randn(16, 8)
+        p2 = FlowPacket(x=x2, y=None)
+        af.process(p2)
+        self.assertTrue(torch.equal(af._cached_mean, initial_mean))
+
+    def test_braided_dna_zero_churn_buffers(self):
+        from accelerator_ai.ecu.braided_controller import BraidedDNAController
+        controller = BraidedDNAController(base_learning_rate=0.02)
+        self.assertEqual(controller._phases_buf.shape, (4,))
+        self.assertEqual(controller._weights_buf.shape, (4,))
+
+        status = controller.update(
+            step=1,
+            learning_torque=1.2,
+            boost_ratio=1.4,
+            injected_entropy=0.1,
+            pyrometer_temp=450.0,
+            loss=1.8,
+        )
+        self.assertIn("learning_rate", status)
+        self.assertIn("resonance_index", status)
+        self.assertGreater(status["learning_rate"], 0.0)
+
+    def test_hierarchical_turbo_levels(self):
+        from accelerator_ai.engine import (
+            TurboLearningEngine,
+            TURBO_LEVEL_CRUISE,
+            TURBO_LEVEL_REGULATED,
+            TURBO_LEVEL_RESONANT,
+            TURBO_LEVEL_FULL,
+        )
+        from accelerator_ai.models.neural_core import PureNumPyMLP
+        m = PureNumPyMLP(layer_sizes=[4, 8, 2])
+        engine = TurboLearningEngine(
+            model=m,
+            enable_default_injectors=False,
+            adaptive_turbo=True,
+            adaptive_check_interval=10,
+        )
+
+        # Early spool (step <= 50) -> TURBO_LEVEL_FULL
+        self.assertEqual(engine._get_turbo_level(1), TURBO_LEVEL_FULL)
+        self.assertEqual(engine._get_turbo_level(50), TURBO_LEVEL_FULL)
+
+        # Step 51 not periodic, not div 3 -> TURBO_LEVEL_CRUISE
+        self.assertEqual(engine._get_turbo_level(52), TURBO_LEVEL_CRUISE)
+
+        # Step 54 divisible by 3 -> TURBO_LEVEL_RESONANT
+        self.assertEqual(engine._get_turbo_level(54), TURBO_LEVEL_RESONANT)
+
+        # Wastegate knock active -> TURBO_LEVEL_FULL
+        engine.wastegate.open_pct = 40.0
+        self.assertEqual(engine._get_turbo_level(52), TURBO_LEVEL_FULL)
+        engine.wastegate.open_pct = 0.0
+
+
 if __name__ == "__main__":
     unittest.main()

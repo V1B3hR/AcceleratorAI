@@ -32,6 +32,29 @@ class VariableValveTiming:
     Dynamically adjusts volumetric efficiency and micro-batch window sizing across 3 static gears.
     """
 
+    @staticmethod
+    def detect_optimal_gears() -> Tuple[int, ...]:
+        """
+        Detects GPU hardware characteristics (VRAM, compute capabilities)
+        and configures optimal discrete gear ratios to maximize throughput.
+        """
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device = torch.cuda.current_device()
+                props = torch.cuda.get_device_properties(device)
+                total_mem_gb = props.total_memory / (1024 ** 3)
+
+                if total_mem_gb >= 20.0:  # High-end GPU (A100, H100, RTX 4090/3090 24GB)
+                    return (32, 64, 128, 256)
+                elif total_mem_gb >= 10.0:  # Mid-range (RTX 4070, RTX 3080, A10 12-16GB)
+                    return (16, 32, 64, 128)
+                else:  # Entry-level / laptop (< 10GB VRAM)
+                    return (8, 16, 32, 64)
+        except Exception:
+            pass
+        return (16, 32, 64)
+
     def __init__(
         self,
         base_batch_size: int = 32,
@@ -40,17 +63,21 @@ class VariableValveTiming:
         max_advance_deg: float = 45.0,
         max_retard_deg: float = -30.0,
         gears: Optional[Tuple[int, ...]] = None,
+        auto_detect_hardware: bool = False,
     ):
         self.base_batch_size = base_batch_size
         self.min_batch_size = min_batch_size
         self.max_batch_size = max_batch_size
         self.max_advance_deg = max_advance_deg
         self.max_retard_deg = max_retard_deg
+        self.auto_detect_hardware = auto_detect_hardware
 
-        # 3 Discrete Pre-Allocated Gears (Skrzynia Biegów)
+        # 3-4 Discrete Pre-Allocated Gears (Skrzynia Biegów)
         # Prevents constant CUDA Graph invalidations and PyTorch compile JIT recompilations
         if gears is not None:
             self.gears = tuple(sorted(list(set(gears))))
+        elif auto_detect_hardware:
+            self.gears = self.detect_optimal_gears()
         else:
             self.gears = tuple(sorted(list(set([min_batch_size, base_batch_size, max_batch_size]))))
 
@@ -59,7 +86,7 @@ class VariableValveTiming:
         self.valve_lift: float = 0.50          # Valve lift height fraction (0.20 to 1.00)
         self.volumetric_efficiency: float = 0.85 # eta_v (0.40 to 1.30)
 
-        # Gear state: default to cruise gear (Gear 2 if 3 gears available)
+        # Gear state: default to cruise gear (Gear 2 if >=2 gears available)
         self.current_gear: int = 2 if len(self.gears) >= 2 else 1
         self.current_batch_size: int = self.gears[min(self.current_gear - 1, len(self.gears) - 1)]
 
@@ -69,6 +96,7 @@ class VariableValveTiming:
         boost_psi: float,
         resonance_index: float = 0.0,
         override_gear: Optional[int] = None,
+        loss_delta: Optional[float] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Dynamically calculates optimal camshaft angle, valve lift, and discrete gearbox selection.
@@ -78,6 +106,7 @@ class VariableValveTiming:
             boost_psi: Manifold pressure gauge PSI.
             resonance_index: Helical resonance H from BraidedDNAController.
             override_gear: Optional master-commanded gear for distributed lockstep synchronization.
+            loss_delta: Optional loss change (previous_loss - current_loss) for predictive shifting.
 
         Returns:
             Tuple of (discrete_micro_batch_size, vvt_telemetry_dict).
@@ -104,8 +133,8 @@ class VariableValveTiming:
         wave_tuning = np.cos(cam_norm * (np.pi / 3.0))
         self.volumetric_efficiency = float(np.clip(0.60 + 0.45 * rpm_factor * wave_tuning * self.valve_lift, 0.40, 1.25))
 
-        # 4. Discrete Gearbox Selection (Skrzynia Biegów)
-        # If distributed Master ECU specifies override_gear, lock to commanded gear:
+        # 4. Discrete Gearbox Selection (Skrzynia Biegów) & Predictive Shifting
+        predictive_shifted = False
         if override_gear is not None:
             gear_idx = min(max(0, override_gear - 1), len(self.gears) - 1)
         elif shaft_rpm < 1400.0:
@@ -114,6 +143,17 @@ class VariableValveTiming:
             gear_idx = len(self.gears) - 1
         else:
             gear_idx = 1 if len(self.gears) >= 3 else 0
+
+        # Predictive gear modulation based on loss velocity
+        if loss_delta is not None and override_gear is None:
+            if loss_delta > 0.03 and gear_idx < len(self.gears) - 1:
+                # Accelerating descent: upshift to maximize token throughput
+                gear_idx += 1
+                predictive_shifted = True
+            elif loss_delta < -0.02 and gear_idx > 0:
+                # Loss destabilization/spike: downshift to agile gear for sharp recovery
+                gear_idx -= 1
+                predictive_shifted = True
 
         self.current_gear = gear_idx + 1
         self.current_batch_size = self.gears[gear_idx]
@@ -125,6 +165,7 @@ class VariableValveTiming:
             "vvt_batch_size": self.current_batch_size,
             "vvt_gear": self.current_gear,
             "vvt_mode": self._get_vvt_mode(),
+            "predictive_shifted": predictive_shifted,
         }
         return self.current_batch_size, telemetry
 

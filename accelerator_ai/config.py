@@ -37,6 +37,9 @@ class EngineConfig:
     amp_dtype: str = "bfloat16"
     enable_telemetry: bool = True
     async_telemetry: bool = False
+    auto_detect_gears: bool = False
+    filter_cache_window: int = 20
+    hierarchical_turbo: bool = True
 
     def __post_init__(self):
         self.validate()
@@ -66,6 +69,10 @@ class EngineConfig:
         if self.adaptive_check_interval < 1:
             raise ConfigurationError(
                 f"adaptive_check_interval must be >= 1, got {self.adaptive_check_interval}."
+            )
+        if self.filter_cache_window < 1:
+            raise ConfigurationError(
+                f"filter_cache_window must be >= 1, got {self.filter_cache_window}."
             )
         valid_amp = ("bfloat16", "float16", "bf16", "fp16")
         if self.amp_dtype.lower() not in valid_amp:

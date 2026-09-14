@@ -31,6 +31,7 @@ class AirFilter(TurbineModule):
         ultrasonic_dedup_threshold: float = 0.98,
         ultrasonic_clean_interval: int = 50,
         ultrasonic_stride: int = 5,
+        cache_window: int = 20,
     ):
         super().__init__(name="AirFilter")
         self.outlier_std_threshold = outlier_std_threshold
@@ -42,7 +43,13 @@ class AirFilter(TurbineModule):
         self.ultrasonic_dedup_threshold = ultrasonic_dedup_threshold
         self.ultrasonic_clean_interval = ultrasonic_clean_interval
         self.ultrasonic_stride = max(1, ultrasonic_stride)
+        self.cache_window = max(1, cache_window)
         self.clog_level: float = 0.0  # 0.0 (clean) to 1.0 (clogged)
+
+        # Cached statistics for incremental non-blocking filtering
+        self._cached_mean = None
+        self._cached_bound = None
+        self._step_counter: int = 0
 
     def process(self, packet: FlowPacket) -> FlowPacket:
         """
@@ -75,15 +82,23 @@ class AirFilter(TurbineModule):
                 else:
                     x_clean, y_clean = x, y
 
-                # Fused non-blocking outlier clamping (Mean/Std bounding without quantile sort stalls)
+                # Fused non-blocking outlier clamping with cached bounds
                 if not self.fast_mode:
-                    mean_val = x_clean.mean(dim=0, keepdim=True)
-                    std_val = x_clean.std(dim=0, keepdim=True) + 1e-5
-                    bound = self.outlier_std_threshold * std_val
-                    filtered_x = torch.clamp(x_clean, mean_val - bound, mean_val + bound)
+                    if (
+                        self._cached_mean is None
+                        or self._cached_bound is None
+                        or (self._step_counter % self.cache_window == 0)
+                        or (hasattr(self._cached_mean, "shape") and self._cached_mean.shape[-1] != x_clean.shape[-1])
+                    ):
+                        self._cached_mean = x_clean.mean(dim=0, keepdim=True)
+                        std_val = x_clean.std(dim=0, keepdim=True) + 1e-5
+                        self._cached_bound = self.outlier_std_threshold * std_val
+
+                    filtered_x = torch.clamp(x_clean, self._cached_mean - self._cached_bound, self._cached_mean + self._cached_bound)
                 else:
                     filtered_x = x_clean
 
+                self._step_counter += 1
                 self.total_processed_packets += 1
                 self.total_processed_samples += packet.batch_size
                 packet.x = filtered_x

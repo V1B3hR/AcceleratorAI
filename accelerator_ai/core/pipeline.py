@@ -236,6 +236,7 @@ class ResonantObservationRoundabout:
         boost_psi: float,
         x_batch: np.ndarray,
         y_batch: np.ndarray,
+        loss_delta: Optional[float] = None,
     ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Applies dynamic VVT cam timing and micro-batch window slicing."""
         vvt_telemetry = {}
@@ -245,6 +246,7 @@ class ResonantObservationRoundabout:
                 boost_psi=boost_psi,
                 resonance_index=self.braided_ecu.resonance_index,
                 override_gear=self.vvt_locked_gear,
+                loss_delta=loss_delta,
             )
             x_intake, y_intake = self.vvt.slice_batch(x_batch, y_batch)
         else:
@@ -334,12 +336,14 @@ class FluidPipeline:
         Executes a single, non-blocking fluid cycle through all 3 roundabout tiers.
         """
         self.current_step = step_index
+        loss_delta = (self.previous_loss - self.last_combustion_loss) if hasattr(self, "last_combustion_loss") else None
 
         # --- Tier 2 -> Tier 0: VVT Dynamic Intake Window Slicing ---
         x_intake, y_intake, vvt_telemetry = self.observation.modulate_intake_window(
             boost_psi=self.core.compressor.boost_psi,
             x_batch=x_batch,
             y_batch=y_batch,
+            loss_delta=loss_delta,
         )
 
         # --- Tier 0: Charge Air Flow (Intake -> Filter -> Compressor -> Intercooler) ---
@@ -358,6 +362,7 @@ class FluidPipeline:
             model=model,
         )
         loss = combustion_result.loss
+        self.last_combustion_loss = float(loss)
 
         # Inform shock injector of current loss for plateau tracking
         if self.injection.shock_injector:
