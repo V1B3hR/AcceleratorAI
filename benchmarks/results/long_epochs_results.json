@@ -1,0 +1,192 @@
+{
+  "vanilla": {
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 2.8848,
+        "val_loss": 2.5603,
+        "val_ppl": 12.94,
+        "epoch_time_s": 0.48,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 2,
+        "train_loss": 2.5061,
+        "val_loss": 2.4845,
+        "val_ppl": 12.0,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 3,
+        "train_loss": 2.4252,
+        "val_loss": 2.3787,
+        "val_ppl": 10.79,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 4,
+        "train_loss": 2.3384,
+        "val_loss": 2.3107,
+        "val_ppl": 10.08,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 5,
+        "train_loss": 2.2521,
+        "val_loss": 2.2393,
+        "val_ppl": 9.39,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 6,
+        "train_loss": 2.1823,
+        "val_loss": 2.175,
+        "val_ppl": 8.8,
+        "epoch_time_s": 0.31,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 7,
+        "train_loss": 2.1067,
+        "val_loss": 2.1629,
+        "val_ppl": 8.7,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 8,
+        "train_loss": 2.0505,
+        "val_loss": 2.1056,
+        "val_ppl": 8.21,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 9,
+        "train_loss": 2.0118,
+        "val_loss": 2.0575,
+        "val_ppl": 7.83,
+        "epoch_time_s": 0.3,
+        "peak_vram_mb": 61.5
+      },
+      {
+        "epoch": 10,
+        "train_loss": 1.9525,
+        "val_loss": 2.0251,
+        "val_ppl": 7.58,
+        "epoch_time_s": 0.31,
+        "peak_vram_mb": 61.5
+      }
+    ],
+    "total_time": 3.22
+  },
+  "accelerator_ai": {
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 2.9307,
+        "val_loss": 2.6071,
+        "val_ppl": 13.56,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.3,
+        "virtual_rpm": 1279.4,
+        "braided_lr": 0.001842
+      },
+      {
+        "epoch": 2,
+        "train_loss": 2.5321,
+        "val_loss": 2.4906,
+        "val_ppl": 12.07,
+        "epoch_time_s": 0.31,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1270.2,
+        "braided_lr": 0.001921
+      },
+      {
+        "epoch": 3,
+        "train_loss": 2.4459,
+        "val_loss": 2.403,
+        "val_ppl": 11.06,
+        "epoch_time_s": 0.31,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1320.0,
+        "braided_lr": 0.001845
+      },
+      {
+        "epoch": 4,
+        "train_loss": 2.3599,
+        "val_loss": 2.3283,
+        "val_ppl": 10.26,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1450.9,
+        "braided_lr": 0.001872
+      },
+      {
+        "epoch": 5,
+        "train_loss": 2.2671,
+        "val_loss": 2.2551,
+        "val_ppl": 9.54,
+        "epoch_time_s": 0.31,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1525.2,
+        "braided_lr": 0.001937
+      },
+      {
+        "epoch": 6,
+        "train_loss": 2.2003,
+        "val_loss": 2.198,
+        "val_ppl": 9.01,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1620.5,
+        "braided_lr": 0.001962
+      },
+      {
+        "epoch": 7,
+        "train_loss": 2.1236,
+        "val_loss": 2.1427,
+        "val_ppl": 8.52,
+        "epoch_time_s": 0.33,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1688.2,
+        "braided_lr": 0.002009
+      },
+      {
+        "epoch": 8,
+        "train_loss": 2.0591,
+        "val_loss": 2.109,
+        "val_ppl": 8.24,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1715.4,
+        "braided_lr": 0.001912
+      },
+      {
+        "epoch": 9,
+        "train_loss": 2.0089,
+        "val_loss": 2.0856,
+        "val_ppl": 8.05,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1739.5,
+        "braided_lr": 0.002063
+      },
+      {
+        "epoch": 10,
+        "train_loss": 1.9668,
+        "val_loss": 2.0216,
+        "val_ppl": 7.55,
+        "epoch_time_s": 0.32,
+        "peak_vram_mb": 63.4,
+        "virtual_rpm": 1824.9,
+        "braided_lr": 0.001909
+      }
+    ],
+    "total_time": 3.18
+  }
+}

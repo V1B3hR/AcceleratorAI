@@ -49,6 +49,8 @@ from accelerator_ai.exceptions import (
 )
 from accelerator_ai.security import InputGuard
 from accelerator_ai.benchmarks.nanogpt import NanoGPT, GPTConfig
+from accelerator_ai.wrapper import wrap
+from accelerator_ai.integrations import AcceleratorAICallback, AcceleratorAILightningCallback
 
 __version__ = "0.5.0"
 
@@ -100,4 +102,7 @@ __all__ = [
     "HardwareSynchronizationError",
     "NanoGPT",
     "GPTConfig",
+    "wrap",
+    "AcceleratorAICallback",
+    "AcceleratorAILightningCallback",
 ]

@@ -166,7 +166,21 @@ class PyTorchTurbineWrapper:
                     else:
                         loss = self.loss_fn(predictions, y_tensor)
                 else:
-                    raise ValueError("No loss_fn provided and model did not compute an internal loss.")
+                    try:
+                        import torch.nn.functional as F
+                        if hasattr(predictions, "ndim") and hasattr(y_tensor, "ndim"):
+                            if predictions.ndim == 2 and y_tensor.ndim == 1:
+                                loss = F.cross_entropy(predictions, y_tensor)
+                            elif predictions.ndim == 3 and y_tensor.ndim == 2:
+                                loss = F.cross_entropy(predictions.view(-1, predictions.size(-1)), y_tensor.view(-1))
+                            elif predictions.shape == y_tensor.shape:
+                                loss = F.mse_loss(predictions.float(), y_tensor.float())
+                            else:
+                                loss = F.cross_entropy(predictions, y_tensor)
+                        else:
+                            raise ValueError("No loss_fn")
+                    except Exception:
+                        raise ValueError("No loss_fn provided and model did not compute an internal loss.")
             else:
                 # Model computed internal loss, apply curriculum weighting if present
                 if sample_weights is not None:

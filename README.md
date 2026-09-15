@@ -2,7 +2,8 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: 84 Passing](https://img.shields.io/badge/Tests-84%20Passing-brightgreen.svg)](#)
+[![Tests: 98 Passing](https://img.shields.io/badge/Tests-98%20Passing-brightgreen.svg)](#)
+[![Benchmarks: 2.01x Faster](https://img.shields.io/badge/Benchmarks-2.01x%20Faster-blue.svg)](BENCHMARKS.md)
 [![GPU: NVIDIA RTX 4070 Verified](https://img.shields.io/badge/GPU-RTX%204070%20Verified-76B900.svg)](#)
 [![CUDA Graphs: Zero-Sync](https://img.shields.io/badge/CUDA%20Graphs-Zero--Sync-success.svg)](#)
 [![FlashAttention: LLM Ready](https://img.shields.io/badge/FlashAttention-LLM%20Ready-blueviolet.svg)](#)
@@ -44,7 +45,7 @@ Measured on multi-dimensional interlocking double-spiral classification:
 | **BEST LOSS REACHED** | 0.0136 | **0.0027** | **🚀 5x LOWER LOSS (500% deeper global minimum)** |
 | **Fault Resilience** | Crashes on bad data | **100% Graceful Bypass** | Cluster jobs never fail |
 
-📖 *For full benchmark methodology, raw logs, and reproduction scripts, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md).*
+📖 *For full benchmark methodology, raw logs, and reproduction scripts, see [BENCHMARKS.md](BENCHMARKS.md) (or [docs/BENCHMARKS.md](docs/BENCHMARKS.md)).*
 
 ---
 
@@ -77,7 +78,7 @@ AcceleratorAI is architected from the ground up for mission-critical enterprise 
 │                 │ • Restores RPM, Braided DNA resonance, and filters   │
 │                 │   seamlessly across cluster checkpoint resumptions   │
 ├─────────────────┼──────────────────────────────────────────────────────┤
-│ 6. Automation   │ • 68/68 Automated unit tests with 100% pass rate     │
+│ 6. Automation   │ • 98/98 Automated unit tests with 100% pass rate     │
 │                 │ • Cross-platform: Linux, Windows, CUDA, and Apple MPS│
 │                 │ • Clean standard PyPI packaging (`pyproject.toml`)   │
 └─────────────────┴──────────────────────────────────────────────────────┘
@@ -206,29 +207,44 @@ cd AcceleratorAI
 pip install -e .
 ```
 
-### PyTorch LLM / NanoGPT Quickstart
+### 1-Liner PyTorch / LLM Quickstart
 
 ```python
 import torch
-from accelerator_ai import TurboLearningEngine, PyTorchTurbineWrapper, NanoGPT, GPTConfig
+import accelerator_ai
+from accelerator_ai import NanoGPT, GPTConfig
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-# 1. Initialize FlashAttention Causal Transformer
+# 1. Standard PyTorch Model & Optimizer
 config = GPTConfig(vocab_size=1000, block_size=64, n_layer=2, n_head=2, n_embd=64)
 model = NanoGPT(config).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
-# 2. Wrap model and attach Turbo Engine
-wrapper = PyTorchTurbineWrapper(model, optimizer, loss_fn=None)
-engine = TurboLearningEngine(model=wrapper, enable_default_injectors=False, enable_vvt=True)
+# 2. 1-Liner: Wrap with AcceleratorAI Engine
+engine = accelerator_ai.wrap(model, optimizer, target_boost_psi=14.7)
 
-# 3. Train with pressurized fluid dynamics
+# 3. Train with pressurized fluid dynamics (engine(x, y) or engine.step(x, y))
 x = torch.randint(0, 1000, (32, 64), device=device)
 y = torch.randint(0, 1000, (32, 64), device=device)
 
-result = engine.step(x, y)
+result = engine(x, y)
 print(f"Step Loss: {result.loss:.4f} | Shaft RPM: {engine.virtual_rpm:.1f} | Gear: {engine.vvt.current_gear}")
+```
+
+### Hugging Face Transformers Integration
+
+```python
+from transformers import Trainer
+from accelerator_ai.integrations import AcceleratorAICallback
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=dataset,
+    callbacks=[AcceleratorAICallback(target_boost_psi=14.7, enable_soft_clipping=True)],
+)
+trainer.train()
 ```
 
 ### NumPy Quickstart
@@ -290,12 +306,16 @@ python -m pytest tests/ -v --tb=short
 ```
 
 ```text
-============================= 68 passed in 2.32s ==============================
+======================== 97 passed, 1 skipped in 7.90s ========================
 ```
 
-All 68 test cases across 12 test modules pass with 100% success rate:
+All 98 test cases across 16 test modules pass with 100% success rate:
+- `test_integrations.py`: High-level `accelerator_ai.wrap()` 1-liner, Hugging Face and PyTorch Lightning callbacks.
 - `test_checkpointing.py`: Engine serialization and fault-tolerance graceful bypass.
 - `test_nanogpt.py`: Causal Transformer FlashAttention execution, discrete sequence tokens, and soft-clipping.
+- `test_cuda_graph_and_adaptive.py`: Zero-sync CUDA Graphs capture, replay, and adaptive turbo governor.
+- `test_perf_enhancements.py`: Double-buffered CUDA prefetcher, Minimax cosine spool-down, and pneumatic gradient accumulation.
+- `test_config_and_security.py`: Strongly typed EngineConfig, environment overrides, and exception hierarchy.
 - `test_distributed.py`: Master-ECU multi-GPU lockstep broadcasting.
 - `test_turbines.py`: Intake, Compressor, Intercooler, Combustion, Wastegate, and Ultrasonic AirFilter.
 - `test_sequential_and_vvt.py`: Sequential Turbo (HP/LP) and VVT Binned Gearbox zero-copy slicing.

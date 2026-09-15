@@ -112,6 +112,7 @@ class TurboLearningEngine:
         self.current_step: int = 0
         self.current_epoch: int = 0
         self.previous_loss: float = 1.0
+        self.target_boost_psi: float = float(resolved_boost)
         self.fault_tolerance_mode = resolved_ft_mode
         self.fast_physics = resolved_fast_physics
         self.enable_cuda_graph = resolved_cuda_graph
@@ -769,4 +770,31 @@ class TurboLearningEngine:
             epoch_losses.append(res.loss)
 
         return epoch_losses
+
+    def __call__(self, x_batch: Any, y_batch: Any) -> CombustionResult:
+        """Shorthand alias for engine.step(x_batch, y_batch)."""
+        return self.step(x_batch, y_batch)
+
+    def eval_step(self, x_batch: Any, y_batch: Any) -> Tuple[Any, float]:
+        """
+        Executes a pure forward validation pass without backward gradients or parameter updates.
+
+        Returns:
+            Tuple[predictions, float_loss]
+        """
+        clean_x, clean_y = self.input_guard.sanitize(x_batch, y_batch)
+        if hasattr(self.model, "forward_and_loss"):
+            try:
+                import torch
+                with torch.no_grad():
+                    preds, loss = self.model.forward_and_loss(clean_x, clean_y)
+            except Exception:
+                preds, loss = self.model.forward_and_loss(clean_x, clean_y)
+        elif hasattr(self.model, "forward"):
+            preds = self.model.forward(clean_x)
+            loss = 0.0
+        else:
+            preds = clean_x
+            loss = 0.0
+        return preds, float(loss)
 

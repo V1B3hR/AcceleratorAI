@@ -20,7 +20,7 @@ keywords = [
     "biomimetic",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
@@ -33,15 +33,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy>=1.24.0",
+    "numpy>=1.24.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
-torch = ["torch>=2.0.0"]
-wandb = ["wandb>=0.15.0"]
+torch = ["torch>=2.0.0,<3.0.0"]
+wandb = ["wandb>=0.15.0,<1.0.0"]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+    "pytest>=7.0.0,<10.0.0",
+    "pytest-cov>=4.0.0,<7.0.0",
 ]
 
 [project.urls]

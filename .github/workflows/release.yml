@@ -1,0 +1,64 @@
+name: Release & Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    name: Run Pre-Release Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev,torch]
+      - name: Execute pytest
+        run: pytest tests/ -v --tb=short
+
+  build-and-publish:
+    name: Build Distributions & Publish
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for PyPI Trusted Publishing
+      contents: write # Required for creating GitHub Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build wheel and sdist
+        run: |
+          python -m build
+
+      - name: Validate distribution packages
+        run: |
+          twine check dist/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

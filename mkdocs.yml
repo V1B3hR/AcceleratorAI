@@ -1,0 +1,55 @@
+site_name: AcceleratorAI
+site_description: Production-Ready Biomimetic Training Dynamics Engine
+site_author: AcceleratorAI Team
+site_url: https://v1b3hr.github.io/AcceleratorAI/
+
+repo_name: V1B3hR/AcceleratorAI
+repo_url: https://github.com/V1B3hR/AcceleratorAI
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: cyan
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - pymdownx.arithmatex:
+      generic: true
+
+nav:
+  - Overview: README.md
+  - Empirical Benchmarks: BENCHMARKS.md
+  - System Architecture: docs/ARCHITECTURE.md
+  - Fluid Dynamics Metaphor: docs/TURBO_METAPHOR.md
+  - Privacy & Air-Gap Security: docs/PRIVACY.md
+  - Changelog & Releases: CHANGELOG.md

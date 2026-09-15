@@ -13,12 +13,15 @@ Hardened for production with:
 import os
 import json
 import time
+import logging
 import secrets
 import threading
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import numpy as np
+
+logger = logging.getLogger("cockpit_server")
 
 from accelerator_ai.models.neural_core import PureNumPyMLP
 from accelerator_ai.engine import TurboLearningEngine
@@ -227,12 +230,12 @@ def run_server():
 
     server_address = (HOST, PORT)
     httpd = ReusableHTTPServer(server_address, CockpitHTTPHandler)
-    access_url = f"http://{HOST}:{PORT}/?token={AUTH_TOKEN}"
+    masked_token = f"{AUTH_TOKEN[:4]}...{AUTH_TOKEN[-4:]}" if len(AUTH_TOKEN) > 8 else "***"
+    logger.debug("Active Cockpit Access URL: http://%s:%s/?token=%s", HOST, PORT, AUTH_TOKEN)
     print("=" * 75)
     print(f"   ACCELERATOR-AI TURBINE COCKPIT SERVER RUNNING (SECURED)")
     print(f"   >> Local Interface: http://{HOST}:{PORT}")
-    print(f"   >> Browser Access:  {access_url}")
-    print(f"   >> Auth Token:      {AUTH_TOKEN}")
+    print(f"   >> Auth Status:     Token authentication active ({masked_token})")
     print(f"   >> Telemetry & Interactive Engine Active")
     print("=" * 75)
 
