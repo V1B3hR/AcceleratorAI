@@ -40,6 +40,7 @@ class EngineConfig:
     auto_detect_gears: bool = False
     filter_cache_window: int = 20
     hierarchical_turbo: bool = True
+    gradient_accumulation_steps: int = 1
 
     def __post_init__(self):
         self.validate()
@@ -73,6 +74,10 @@ class EngineConfig:
         if self.filter_cache_window < 1:
             raise ConfigurationError(
                 f"filter_cache_window must be >= 1, got {self.filter_cache_window}."
+            )
+        if self.gradient_accumulation_steps < 1:
+            raise ConfigurationError(
+                f"gradient_accumulation_steps must be >= 1, got {self.gradient_accumulation_steps}."
             )
         valid_amp = ("bfloat16", "float16", "bf16", "fp16")
         if self.amp_dtype.lower() not in valid_amp:

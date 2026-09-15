@@ -15,6 +15,8 @@ from accelerator_ai.core.pipeline import (
     ResonantObservationRoundabout,
 )
 
+from accelerator_ai.core.prefetcher import CUDAPrefetcher
+
 __all__ = [
     "FlowPacket",
     "TurbineModule",
@@ -28,4 +30,5 @@ __all__ = [
     "ExpressCoreRoundabout",
     "AuxiliaryInjectionRoundabout",
     "ResonantObservationRoundabout",
+    "CUDAPrefetcher",
 ]

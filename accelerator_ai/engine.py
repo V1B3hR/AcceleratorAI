@@ -82,6 +82,7 @@ class TurboLearningEngine:
         amp_dtype: Optional[str] = None,
         enable_telemetry: Optional[bool] = None,
         async_telemetry: Optional[bool] = None,
+        gradient_accumulation_steps: Optional[int] = None,
     ):
         self.model = model
         self.config = config or EngineConfig()
@@ -106,6 +107,7 @@ class TurboLearningEngine:
         resolved_auto_detect_gears = self.config.auto_detect_gears
         resolved_filter_cache = self.config.filter_cache_window
         resolved_hierarchical_turbo = self.config.hierarchical_turbo
+        resolved_accum = gradient_accumulation_steps if gradient_accumulation_steps is not None else self.config.gradient_accumulation_steps
 
         self.current_step: int = 0
         self.current_epoch: int = 0
@@ -116,6 +118,7 @@ class TurboLearningEngine:
         self.adaptive_turbo = resolved_adaptive_turbo
         self.adaptive_check_interval = resolved_check_interval
         self.hierarchical_turbo = resolved_hierarchical_turbo
+        self.gradient_accumulation_steps = resolved_accum
         self.enable_amp = resolved_enable_amp
         self.amp_dtype = resolved_amp_dtype
         self.enable_telemetry = resolved_enable_telemetry
@@ -641,6 +644,77 @@ class TurboLearningEngine:
                 air_fuel_ratio=14.7,
                 homogeneity_pct=100.0,
             )
+
+    def step_accumulated(
+        self,
+        x_micro: Any,
+        y_micro: Any,
+        step_in_cycle: int = 1,
+        total_cycle_steps: Optional[int] = None,
+    ) -> CombustionResult:
+        """
+        Executes a single micro-step within a multi-step gradient accumulation window.
+        Gradients are scaled by (1 / total_cycle_steps), with intra-step wastegate
+        inspection to prevent explosion. Model parameters update only on the
+        final micro-step of the cycle.
+        """
+        total_k = total_cycle_steps or self.gradient_accumulation_steps
+        is_final_step = (step_in_cycle >= total_k)
+        is_first_step = (step_in_cycle == 1)
+
+        clean_x, clean_y = self.input_guard.sanitize(x_micro, y_micro)
+        if self.vvt:
+            clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
+
+        # Forward pass without clearing grads unless first step
+        if hasattr(self.model, "forward_and_loss"):
+            predictions, raw_loss = self.model.forward_and_loss(
+                clean_x, clean_y, zero_grad=is_first_step
+            )
+            scaled_loss = raw_loss / float(total_k)
+        else:
+            predictions, raw_loss = self.model.forward_and_loss(clean_x, clean_y)
+            scaled_loss = raw_loss / float(total_k)
+
+        # Backward pass on scaled loss
+        if hasattr(self.model, "scaler") and self.model.scaler is not None and self.model.scaler.is_enabled():
+            self.model.scaler.scale(scaled_loss).backward()
+        elif hasattr(scaled_loss, "backward"):
+            scaled_loss.backward()
+        else:
+            self.model.backward()
+
+        # On final accumulation micro-step: inspect/regulate accumulated gradients and apply updates
+        grad_norm, was_vented = 0.0, False
+        if is_final_step:
+            self.current_step += 1
+            if hasattr(self.model, "harvest_and_regulate_fused"):
+                grad_norm, clipped_norm, was_vented = self.model.harvest_and_regulate_fused(
+                    threshold=self.wastegate.max_gradient_norm,
+                    boost_ratio=self.compressor.boost_ratio,
+                    enable_soft_clipping=self.wastegate.enable_soft_clipping,
+                    skip_backward=True,
+                )
+            lr = self.braided_ecu.current_learning_rate
+            self.model.apply_updates(learning_rate=lr)
+
+        loss_val = float(raw_loss)
+        self.previous_loss = loss_val
+        self.loss_history.append(loss_val)
+
+        fused_packet = self.packet_pool.acquire(
+            x=clean_x,
+            y=clean_y,
+            pressure=self.compressor.boost_ratio,
+        )
+        return CombustionResult(
+            loss=loss_val,
+            predictions=predictions,
+            fused_packet=fused_packet,
+            exhaust_energy=float(loss_val),
+            air_fuel_ratio=14.7,
+            homogeneity_pct=100.0,
+        )
 
     def state_dict(self) -> Dict[str, Any]:
         """

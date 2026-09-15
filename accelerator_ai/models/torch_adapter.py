@@ -79,6 +79,7 @@ class PyTorchTurbineWrapper:
         y: Any,
         sample_weights: Optional[Any] = None,
         return_numpy_preds: bool = False,
+        zero_grad: bool = True,
     ) -> Tuple[Any, float]:
         """
         Runs forward pass and evaluates loss with automatic device placement.
@@ -106,10 +107,11 @@ class PyTorchTurbineWrapper:
         else:
             y_tensor = self.torch.from_numpy(y).float().to(device)
 
-        try:
-            self.optimizer.zero_grad(set_to_none=True)
-        except TypeError:
-            self.optimizer.zero_grad()
+        if zero_grad:
+            try:
+                self.optimizer.zero_grad(set_to_none=True)
+            except TypeError:
+                self.optimizer.zero_grad()
         self.last_sample_weights = sample_weights
 
         # Resolve AMP context
@@ -213,23 +215,30 @@ class PyTorchTurbineWrapper:
         threshold: float = 5.0,
         boost_ratio: float = 1.0,
         enable_soft_clipping: bool = True,
+        skip_backward: bool = False,
     ) -> Tuple[float, float, bool]:
         """
         Fused on-device gradient harvesting and pneumatic wastegate regulation.
-        Performs backward pass, norm calculation, and tanh soft-clipping directly on GPU
+        Performs backward pass (unless skip_backward=True), norm calculation, and tanh soft-clipping directly on GPU
         in a single fused operation without host-device synchronization stalls.
 
         Returns:
             (raw_norm, clipped_norm, was_vented)
         """
-        if self.last_loss_tensor is None:
-            return 0.0, 0.0, False
+        if not skip_backward:
+            if self.last_loss_tensor is None:
+                return 0.0, 0.0, False
 
-        if self.scaler is not None:
-            self.scaler.scale(self.last_loss_tensor).backward()
-            self.scaler.unscale_(self.optimizer)
-        else:
-            self.last_loss_tensor.backward()
+            if self.scaler is not None:
+                self.scaler.scale(self.last_loss_tensor).backward()
+                self.scaler.unscale_(self.optimizer)
+            else:
+                self.last_loss_tensor.backward()
+        elif self.scaler is not None and getattr(self.scaler, "is_enabled", lambda: True)():
+            try:
+                self.scaler.unscale_(self.optimizer)
+            except RuntimeError:
+                pass  # Already unscaled
 
         grads = [p.grad for p in self.model.parameters() if p.grad is not None]
         if not grads:
@@ -327,4 +336,12 @@ class PyTorchTurbineWrapper:
             self.scaler.update()
         else:
             self.optimizer.step()
+
+    def zero_grad(self) -> None:
+        """Manually clear optimizer gradients."""
+        try:
+            self.optimizer.zero_grad(set_to_none=True)
+        except TypeError:
+            self.optimizer.zero_grad()
+
 

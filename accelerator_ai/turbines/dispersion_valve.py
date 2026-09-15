@@ -74,8 +74,116 @@ class SwirlDispersionValve(TurbineModule):
             return main_packet
 
         self.total_dispersions += 1
+        is_torch = type(main_packet.x).__module__.startswith("torch")
+        if is_torch:
+            import torch
+            if hasattr(main_packet.x, "is_floating_point") and not main_packet.x.is_floating_point():
+                # Fast-Path for Discrete Integer Tokens (LLMs / Transformers):
+                # Preserves integer token IDs without float corruption or CPU roundtrips
+                discrete_tensors_x = [p.x for p in valid_injections if type(p.x).__module__.startswith("torch")]
+                if discrete_tensors_x:
+                    cat_x = torch.cat([main_packet.x] + discrete_tensors_x, dim=0)
+                    if main_packet.y is not None:
+                        cat_y = torch.cat([main_packet.y] + [p.y for p in valid_injections if p.y is not None and type(p.y).__module__.startswith("torch")], dim=0)
+                    else:
+                        cat_y = None
+                else:
+                    cat_x, cat_y = main_packet.x, main_packet.y
+
+                self.last_homogeneity_pct = 100.0
+                return FlowPacket(
+                    x=cat_x,
+                    y=cat_y,
+                    pressure=main_packet.pressure,
+                    viscosity=main_packet.viscosity,
+                    temperature=main_packet.temperature,
+                    phase=main_packet.phase,
+                    source="swirl_atomized_tokens",
+                    metadata={"homogeneity_pct": 100.0, "droplet_fineness_um": 10.0},
+                )
+
+            # PyTorch Floating Point Tensor fast path (continuous embeddings / features):
+            # Pure GPU execution with zero host copies or numpy conversions
+            device = main_packet.x.device
+            x_main = main_packet.x.clone()
+            y_main = main_packet.y.clone() if main_packet.y is not None else None
+            n_main = main_packet.batch_size
+
+            diffusive_packets = []
+            discrete_packets = []
+            for p in valid_injections:
+                is_diffusive = (
+                    self.diffusive_mode and (
+                        p.source in ("synthetic_injector", "shock_injector")
+                        or getattr(p, "metadata", {}).get("injector_type") == "synthetic"
+                    )
+                )
+                if is_diffusive:
+                    diffusive_packets.append(p)
+                else:
+                    discrete_packets.append(p)
+
+            if diffusive_packets:
+                diff_tensors_x = [
+                    p.x.to(device=device, dtype=x_main.dtype) if type(p.x).__module__.startswith("torch")
+                    else torch.as_tensor(p.x, device=device, dtype=x_main.dtype)
+                    for p in diffusive_packets
+                ]
+                diff_x = torch.cat(diff_tensors_x, dim=0)
+                n_diff = diff_x.size(0)
+                swirl_indices = torch.randint(0, n_diff, (n_main,), device=device)
+                swirl_factor = float(np.sin(np.radians(self.swirl_angle_deg)))
+                effective_gamma = self.diffusion_gamma * swirl_factor
+                diff_noise = (diff_x[swirl_indices] - x_main) * effective_gamma
+                x_main = x_main + diff_noise
+                self.last_droplet_fineness = float(max(2.0, 20.0 - (swirl_factor * 12.0)))
+
+            if discrete_packets:
+                disc_tensors_x = [
+                    p.x.to(device=device, dtype=x_main.dtype) if type(p.x).__module__.startswith("torch")
+                    else torch.as_tensor(p.x, device=device, dtype=x_main.dtype)
+                    for p in discrete_packets
+                ]
+                disc_x = torch.cat(disc_tensors_x, dim=0)
+                final_x = torch.cat([x_main, disc_x], dim=0)
+                if y_main is not None:
+                    disc_tensors_y = [
+                        p.y.to(device=device) if type(p.y).__module__.startswith("torch")
+                        else torch.as_tensor(p.y, device=device)
+                        for p in discrete_packets if p.y is not None
+                    ]
+                    if disc_tensors_y:
+                        final_y = torch.cat([y_main] + disc_tensors_y, dim=0)
+                    else:
+                        final_y = y_main
+                else:
+                    final_y = None
+            else:
+                final_x = x_main
+                final_y = y_main
+
+            self.last_homogeneity_pct = 95.0
+            total_injected = sum(p.batch_size for p in valid_injections)
+            mass_ratio_injected = total_injected / (n_main + total_injected)
+            avg_inj_pressure = float(np.mean([p.pressure for p in valid_injections]))
+            avg_inj_temp = float(np.mean([p.temperature for p in valid_injections]))
+            blended_pressure = float((1.0 - mass_ratio_injected) * main_packet.pressure + mass_ratio_injected * avg_inj_pressure)
+            blended_temp = float((1.0 - mass_ratio_injected) * main_packet.temperature + mass_ratio_injected * avg_inj_temp * 0.8)
+
+            return FlowPacket(
+                x=final_x,
+                y=final_y,
+                pressure=blended_pressure,
+                viscosity=main_packet.viscosity,
+                temperature=blended_temp,
+                phase=main_packet.phase,
+                source="swirl_atomized_torch",
+                metadata={"homogeneity_pct": 95.0, "droplet_fineness_um": self.last_droplet_fineness},
+            )
+
         x_main = main_packet.x.copy()
-        y_main = main_packet.y.copy()
+        y_main = main_packet.y.copy() if main_packet.y is not None else None
+
         n_main = main_packet.batch_size
 
         # Accumulate injected fuel components

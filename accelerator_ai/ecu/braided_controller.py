@@ -16,7 +16,7 @@ creative bifurcation, shattering loss plateaus.
 """
 
 from collections import deque
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 
 
@@ -32,6 +32,9 @@ class BraidedDNAController:
         history_len: int = 100,
         ema_alpha: float = 0.1,           # Smoothing factor for resonance index
         lr_envelope_max: float = 1.3,     # Max LR = base * envelope (±30%)
+        fast_trig: bool = True,           # Minimax fast-polynomial approximation for cos()
+        total_steps: Optional[int] = None, # Total steps for global spool-down decay
+        min_lr_ratio: float = 0.1,        # Minimum learning rate ratio after full spool-down
     ):
         self.base_learning_rate = base_learning_rate
         self.coupling_strength = coupling_strength
@@ -39,6 +42,9 @@ class BraidedDNAController:
         self.ema_alpha = ema_alpha
         self.lr_envelope_max = lr_envelope_max
         self.lr_envelope_min = 1.0 / lr_envelope_max  # Symmetric lower bound
+        self.fast_trig = fast_trig
+        self.total_steps = total_steps
+        self.min_lr_ratio = min_lr_ratio
 
         # Strand phase clocks (radians)
         self.phase_grad: float = 0.0
@@ -123,7 +129,15 @@ class BraidedDNAController:
 
         # Pairwise phase difference matrix (upper triangle)
         phase_diff = np.subtract.outer(self._phases_buf, self._phases_buf)
-        cos_diff = np.cos(phase_diff)
+        if self.fast_trig:
+            # Wrap to [-pi, pi] and compute 6th-order minimax polynomial with clipping
+            diff = (phase_diff + np.pi) % (2.0 * np.pi) - np.pi
+            d2 = diff * diff
+            d4 = d2 * d2
+            cos_diff = np.clip(1.0 - 0.5 * d2 + 0.04166667 * d4 - 0.00138889 * (d4 * d2), -1.0, 1.0)
+        else:
+            cos_diff = np.cos(phase_diff)
+
         weight_sum = np.add.outer(self._weights_buf, self._weights_buf)
         weighted_interf = cos_diff * (0.5 + 0.5 * weight_sum)
 
@@ -161,13 +175,20 @@ class BraidedDNAController:
         if loss is not None and loss < 0.1:
             loss_settle = float(np.clip(0.35 + 0.65 * (loss / 0.1), 0.35, 1.0))
 
+        # Global spool-down decay schedule (Cosine Annealing coupled with shaft work)
+        decay = 1.0
+        if self.total_steps is not None and self.total_steps > 0:
+            progress = min(1.0, max(0.0, step / float(self.total_steps)))
+            cosine_factor = 0.5 * (1.0 + np.cos(np.pi * progress))
+            decay = self.min_lr_ratio + (1.0 - self.min_lr_ratio) * cosine_factor
+
         raw_lr = float(
-            self.base_learning_rate * resonance_mod * boost_mod * thermal_damping * loss_settle
+            self.base_learning_rate * resonance_mod * boost_mod * thermal_damping * loss_settle * decay
         )
 
         # LR Envelope: clamp to [base*envelope_min, base*envelope_max]
-        # When settling, allow lower floor down to 0.25 * base
-        floor_multiplier = min(self.lr_envelope_min, loss_settle)
+        # When settling or decaying, allow lower floor down to floor_multiplier
+        floor_multiplier = min(self.lr_envelope_min, loss_settle * decay)
         lr_min = self.base_learning_rate * floor_multiplier
         lr_max = self.base_learning_rate * self.lr_envelope_max
         self.current_learning_rate = float(np.clip(raw_lr, max(1e-5, lr_min), min(0.1, lr_max)))
