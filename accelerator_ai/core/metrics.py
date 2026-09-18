@@ -46,6 +46,11 @@ class EngineTelemetry:
     volumetric_efficiency: float = 0.85   # VVT Volumetric efficiency eta_v
     vvt_gear: int = 2                     # Discrete gearbox selection (Gear 1, 2, 3)
     twin_scroll_balance: float = 1.0      # Twin-Scroll exhaust pulse balance (Scroll A / (A+B))
+    engine_overhead_ms: float = 0.0       # Profiling: Time spent in turbine control logic (ms)
+    compute_efficiency_pct: float = 100.0 # Profiling: % of step time spent on pure model compute
+    vram_free_pct: float = 100.0          # Memory: Real-time % of unallocated GPU VRAM headroom
+    kalman_loss_velocity: float = 0.0     # Dynamics: Denoised loss descent velocity from Kalman filter
+    isolated_modules_count: int = 0       # Resilience: Number of currently tripped circuit breakers
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert telemetry to serialized dictionary for JSON / WebSocket streaming."""

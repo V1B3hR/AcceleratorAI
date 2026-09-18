@@ -9,6 +9,7 @@ BraidedDNAController into an integrated, dynamically closed fluid-learning loop.
 
 from typing import List, Optional, Dict, Any, Tuple
 import logging
+import time
 import numpy as np
 
 from accelerator_ai.core.flow_packet import FlowPacket, FlowPacketPool
@@ -41,6 +42,9 @@ from accelerator_ai.core.pipeline import (
     AuxiliaryInjectionRoundabout,
     ResonantObservationRoundabout,
 )
+from accelerator_ai.core.engine_state import EngineState
+from accelerator_ai.ecu.kalman import KalmanLossGovernor
+from accelerator_ai.security.vram_guard import VRAMPressureGuard, PressureLevel
 
 logger = logging.getLogger("accelerator_ai.engine")
 
@@ -127,6 +131,11 @@ class TurboLearningEngine:
         self.input_guard = input_guard or InputGuard()
         self.packet_pool = FlowPacketPool(max_size=64)
         self.loss_history: List[float] = []
+
+        # Atomic State & Closed-Loop Control
+        self.engine_state = EngineState()
+        self.kalman_governor = KalmanLossGovernor(initial_loss=1.0)
+        self.vram_guard = VRAMPressureGuard()
 
         # CUDA Graph pre-allocated state
         self.cuda_graph: Optional[Any] = None
@@ -373,14 +382,94 @@ class TurboLearningEngine:
         """
         return self._get_turbo_level(current_step) >= TURBO_LEVEL_FULL
 
+    def _sync_engine_state(
+        self,
+        loss_val: float,
+        model_compute_ms: float,
+        t_step_start: float,
+        mem_report: Any,
+    ) -> None:
+        """
+        Synchronizes the atomic EngineState, tracks Kalman loss dynamics,
+        and profiles engine computational overhead vs model compute.
+        """
+        t_step_end = time.perf_counter()
+        total_step_ms = max(1e-6, (t_step_end - t_step_start) * 1000.0)
+        engine_overhead_ms = max(0.0, total_step_ms - model_compute_ms)
+        compute_efficiency_pct = max(0.0, min(100.0, (model_compute_ms / total_step_ms) * 100.0))
+
+        # Closed-loop feedback: Update Kalman Governor
+        kalman_est = self.kalman_governor.update(loss_val)
+
+        # Closed-loop feedback: Modulate compressor boost on plateau/divergence
+        if abs(kalman_est.recommended_boost_mod - 1.0) > 0.01:
+            base_boost = getattr(self.config, "boost_ratio", 1.0)
+            target_boost = float(np.clip(base_boost * kalman_est.recommended_boost_mod, 1.0, 2.5))
+            self.compressor.set_boost(target_boost)
+
+        # Identify isolated modules from tripped circuit breakers
+        isolated_mods = []
+        for name, module in [
+            ("intake", self.intake),
+            ("filter", self.filter),
+            ("compressor", self.compressor),
+            ("intercooler", self.intercooler),
+            ("combustion", self.combustion),
+            ("gradient_turbine", self.gradient_turbine),
+            ("wastegate", self.wastegate),
+        ]:
+            if hasattr(module, "circuit_breaker") and module.circuit_breaker.is_tripped:
+                isolated_mods.append(name)
+
+        # Update atomic single source of truth: EngineState
+        self.engine_state.step = self.current_step
+        self.engine_state.epoch = self.current_epoch
+        self.engine_state.rpm = float(self.shaft.rpm)
+        self.engine_state.boost_psi = float(self.compressor.boost_psi)
+        self.engine_state.boost_ratio = float(self.compressor.boost_ratio)
+        self.engine_state.compressor_load = float(self.compressor.compute_reaction_load())
+        self.engine_state.learning_torque = float(getattr(self.gradient_turbine, "shaft_efficiency", 1.0) * 0.5)
+        self.engine_state.pyrometer_temp = float(getattr(self.combustion, "pyrometer_temp", 200.0))
+        self.engine_state.vvt_gear = self.vvt.current_gear if self.vvt else 1
+        self.engine_state.vvt_batch_size = self.vvt.current_batch_size if self.vvt else 32
+        self.engine_state.cam_advance_deg = float(getattr(self.vvt, "cam_advance_deg", 0.0)) if self.vvt else 0.0
+        self.engine_state.valve_lift = float(getattr(self.vvt, "valve_lift", 0.5)) if self.vvt else 0.5
+        self.engine_state.wastegate_open_pct = float(self.wastegate.open_pct)
+        self.engine_state.learning_rate = float(self.braided_ecu.current_learning_rate)
+        self.engine_state.helical_resonance = float(self.braided_ecu.resonance_index)
+        self.engine_state.phase_tension = float(self.braided_ecu.phase_tension)
+        self.engine_state.raw_loss = float(loss_val)
+        self.engine_state.filtered_loss = float(kalman_est.filtered_loss)
+        self.engine_state.loss_velocity = float(kalman_est.loss_velocity)
+        self.engine_state.is_plateau_stall = bool(kalman_est.is_plateau)
+        if mem_report is not None:
+            self.engine_state.vram_allocated_bytes = int(mem_report.allocated_bytes)
+            self.engine_state.vram_free_bytes = int(mem_report.free_bytes)
+            self.engine_state.vram_free_pct = float(mem_report.free_pct)
+            self.engine_state.vram_pressure_level = str(mem_report.level.value)
+        self.engine_state.isolated_modules = isolated_mods
+        self.engine_state.step_duration_ms = float(total_step_ms)
+        self.engine_state.model_compute_ms = float(model_compute_ms)
+        self.engine_state.engine_overhead_ms = float(engine_overhead_ms)
+        self.engine_state.compute_efficiency_pct = float(compute_efficiency_pct)
+
     def step(self, x_batch: np.ndarray, y_batch: np.ndarray) -> CombustionResult:
         """
         Executes a single physically closed turbocharged learning cycle via FluidPipeline,
         Zero-Sync CUDA Graph replay, or Adaptive Turbo Cruising.
-        Protected by InputGuard and FaultTolerance bypass mode.
+        Protected by InputGuard, VRAMPressureGuard, and FaultTolerance bypass mode.
         """
+        t_step_start = time.perf_counter()
         self.current_step += 1
         clean_x, clean_y = self.input_guard.sanitize(x_batch, y_batch)
+
+        # 1. Proactive Hardware / VRAM Awareness & Preemptive Downshift / Cache Flush
+        mem_report = self.vram_guard.inspect(self.current_step)
+        if mem_report.recommended_downshift and self.vvt and self.vvt.current_gear > 1:
+            self.vvt.shift_down()
+            self.vram_guard.total_preemptive_downshifts += 1
+            logger.info("Preemptive VRAM pressure [%s]: downshifted VVT to Gear %d", mem_report.level.value, self.vvt.current_gear)
+        self.vram_guard.remedy_if_critical()
 
         # In distributed mode, synchronize engine gear and dynamics across ranks
         if self.distributed_coordinator.is_distributed and self.vvt:
@@ -407,7 +496,10 @@ class TurboLearningEngine:
         ):
             self.static_x.copy_(clean_x)
             self.static_y.copy_(clean_y)
+            t_model_start = time.perf_counter()
             self.cuda_graph.replay()
+            t_model_end = time.perf_counter()
+            model_compute_ms = max(0.0, (t_model_end - t_model_start) * 1000.0)
 
             if getattr(self, "static_loss_tensor", None) is not None:
                 loss_val = float(self.static_loss_tensor.item())
@@ -432,6 +524,8 @@ class TurboLearningEngine:
                     loss=loss_val,
                 )
 
+            self._sync_engine_state(loss_val, model_compute_ms, t_step_start, mem_report)
+
             fused_packet = self.packet_pool.acquire(
                 x=clean_x,
                 y=clean_y,
@@ -453,6 +547,7 @@ class TurboLearningEngine:
                 clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
 
             # 2. Forward pass & loss
+            t_model_start = time.perf_counter()
             predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
 
             # 3. Exhaust harvesting & soft-clipping
@@ -494,9 +589,14 @@ class TurboLearningEngine:
 
             # 5. Parameter update
             self.model.apply_updates(learning_rate=braid_status["learning_rate"])
+            t_model_end = time.perf_counter()
+            model_compute_ms = max(0.0, (t_model_end - t_model_start) * 1000.0)
+
             loss_val = float(loss)
             self.previous_loss = loss_val
             self.loss_history.append(loss_val)
+
+            self._sync_engine_state(loss_val, model_compute_ms, t_step_start, mem_report)
 
             fused_packet = self.packet_pool.acquire(
                 x=clean_x,
@@ -519,6 +619,7 @@ class TurboLearningEngine:
             if self.vvt:
                 clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
 
+            t_model_start = time.perf_counter()
             predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
 
             # Level 2+: Fused On-Device Wastegate Regulation
@@ -555,10 +656,14 @@ class TurboLearningEngine:
                 lr_to_apply = braid_status["learning_rate"]
 
             self.model.apply_updates(learning_rate=lr_to_apply)
+            t_model_end = time.perf_counter()
+            model_compute_ms = max(0.0, (t_model_end - t_model_start) * 1000.0)
 
             loss_val = float(loss)
             self.previous_loss = loss_val
             self.loss_history.append(loss_val)
+
+            self._sync_engine_state(loss_val, model_compute_ms, t_step_start, mem_report)
 
             fused_packet = self.packet_pool.acquire(
                 x=clean_x,
@@ -575,14 +680,23 @@ class TurboLearningEngine:
             )
 
         try:
+            t_pipe_start = time.perf_counter()
             res = self.pipeline.flow_step(
                 x_batch=clean_x,
                 y_batch=clean_y,
                 model=self.model,
                 step_index=self.current_step,
                 epoch_index=self.current_epoch,
+                engine_overhead_ms=self.engine_state.engine_overhead_ms,
+                compute_efficiency_pct=self.engine_state.compute_efficiency_pct,
+                vram_free_pct=self.engine_state.vram_free_pct,
+                kalman_loss_velocity=self.engine_state.loss_velocity,
             )
+            t_pipe_end = time.perf_counter()
+            model_compute_ms = max(0.0, (t_pipe_end - t_pipe_start) * 800.0)
             self.previous_loss = res.loss
+            self.loss_history.append(res.loss)
+            self._sync_engine_state(res.loss, model_compute_ms, t_step_start, mem_report)
             return res
         except Exception as e:
             is_oom = "OutOfMemory" in type(e).__name__ or "out of memory" in str(e).lower()
@@ -605,16 +719,22 @@ class TurboLearningEngine:
                     clean_x, clean_y = self.vvt.slice_batch(clean_x, clean_y)
 
                 try:
+                    t_retry_start = time.perf_counter()
                     predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
                     self.model.backward()
                     self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
-                    self.previous_loss = float(loss)
+                    t_retry_end = time.perf_counter()
+                    model_compute_ms = max(0.0, (t_retry_end - t_retry_start) * 1000.0)
+                    loss_val = float(loss)
+                    self.previous_loss = loss_val
+                    self.loss_history.append(loss_val)
+                    self._sync_engine_state(loss_val, model_compute_ms, t_step_start, mem_report)
                     fallback_packet = FlowPacket(x=clean_x, y=clean_y, pressure=1.0)
                     return CombustionResult(
-                        loss=float(loss),
+                        loss=loss_val,
                         predictions=predictions,
                         fused_packet=fallback_packet,
-                        exhaust_energy=float(loss),
+                        exhaust_energy=loss_val,
                         air_fuel_ratio=14.7,
                         homogeneity_pct=100.0,
                     )
@@ -632,16 +752,22 @@ class TurboLearningEngine:
                 exc_info=False,
             )
             # Graceful degradation fallback: direct execution to keep cluster training alive
+            t_bypass_start = time.perf_counter()
             predictions, loss = self.model.forward_and_loss(clean_x, clean_y)
             self.model.backward()
             self.model.apply_updates(learning_rate=self.braided_ecu.current_learning_rate)
-            self.previous_loss = float(loss)
+            t_bypass_end = time.perf_counter()
+            model_compute_ms = max(0.0, (t_bypass_end - t_bypass_start) * 1000.0)
+            loss_val = float(loss)
+            self.previous_loss = loss_val
+            self.loss_history.append(loss_val)
+            self._sync_engine_state(loss_val, model_compute_ms, t_step_start, mem_report)
             fallback_packet = FlowPacket(x=clean_x, y=clean_y, pressure=1.0)
             return CombustionResult(
-                loss=float(loss),
+                loss=loss_val,
                 predictions=predictions,
                 fused_packet=fallback_packet,
-                exhaust_energy=float(loss),
+                exhaust_energy=loss_val,
                 air_fuel_ratio=14.7,
                 homogeneity_pct=100.0,
             )

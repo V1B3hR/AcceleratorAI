@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-18
+
+### Added
+- **Closed-Loop Kalman Governor (`KalmanLossGovernor`)**: 2-state discrete-time state-space Kalman filter tracking latent loss and velocity $x = [\mathcal{L}, \dot{\mathcal{L}}]^T$ with stochastic noise rejection and continuous, jitter-free boost modulation for plateaus ($1.5\times$) and divergence ($0.7\times$).
+- **Per-Module Circuit Breakers (`ModuleCircuitBreaker`)**: Enterprise fault isolation implementing the Netflix Hystrix pattern (`CLOSED` $\to$ `OPEN` $\to$ `HALF_OPEN`) on each individual turbine module to bypass localized runtime failures without stopping training.
+- **Preemptive VRAM Pressure Guard (`VRAMPressureGuard`)**: Asynchronous device memory headroom monitoring via `torch.cuda.mem_get_info()`, recommending proactive VVT downshifting and cache purging before Out-Of-Memory exceptions can occur.
+- **Atomic Single Source of Truth (`EngineState`)**: Unified state tracking kinetics, VVT gears, Kalman loss dynamics, VRAM pressure levels, tripped module breakers, and real-time step profiling.
+- **Continuous Profiling & Overhead Tracking**: Real-time measurement of `engine_overhead_ms` and `compute_efficiency_pct` embedded directly in `EngineTelemetry`.
+- Expanded test suite to **111 automated unit tests** with 100% pass rate.
+
 ## [0.5.0] - 2026-09-15
 
 ### Added

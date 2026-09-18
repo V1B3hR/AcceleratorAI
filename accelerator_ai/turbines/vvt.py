@@ -169,6 +169,20 @@ class VariableValveTiming:
         }
         return self.current_batch_size, telemetry
 
+    def shift_down(self) -> int:
+        """Shifts down one gear to relieve memory or stabilize learning."""
+        if self.current_gear > 1:
+            self.current_gear -= 1
+            self.current_batch_size = self.gears[self.current_gear - 1]
+        return self.current_gear
+
+    def shift_up(self) -> int:
+        """Shifts up one gear to increase throughput."""
+        if self.current_gear < len(self.gears):
+            self.current_gear += 1
+            self.current_batch_size = self.gears[self.current_gear - 1]
+        return self.current_gear
+
     def slice_batch(self, x: Any, y: Any) -> Tuple[Any, Any]:
         """
         Slices an incoming batch to the discrete gearbox micro-batch size.

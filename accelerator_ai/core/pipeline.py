@@ -111,15 +111,15 @@ class ExpressCoreRoundabout:
         self.gradient_turbine = gradient_turbine
         self.wastegate = wastegate
 
-    def run_charge_air(self, x: np.ndarray, y: np.ndarray) -> FlowPacket:
+    def run_charge_air(self, x: np.ndarray, y: np.ndarray, step: int = 0) -> FlowPacket:
         """
         Flows intake batch through intake, filter, compressor, and intercooler.
-        Streamlined to avoid redundant intermediate copies.
+        Streamlined and guarded by per-module circuit breakers.
         """
         raw_packet = self.intake.ingest_raw(x, y)
-        clean_packet = self.filter.process(raw_packet)
-        compressed_packet = self.compressor.process(clean_packet)
-        cooled_packet = self.intercooler.process(compressed_packet)
+        clean_packet = self.filter.safe_process(raw_packet, current_step=step)
+        compressed_packet = self.compressor.safe_process(clean_packet, current_step=step)
+        cooled_packet = self.intercooler.safe_process(compressed_packet, current_step=step)
         return cooled_packet
 
     def run_combustion(
@@ -331,6 +331,7 @@ class FluidPipeline:
         model: Any,
         step_index: int,
         epoch_index: int = 0,
+        **kwargs: Any,
     ) -> CombustionResult:
         """
         Executes a single, non-blocking fluid cycle through all 3 roundabout tiers.
@@ -347,7 +348,7 @@ class FluidPipeline:
         )
 
         # --- Tier 0: Charge Air Flow (Intake -> Filter -> Compressor -> Intercooler) ---
-        cooled_packet = self.core.run_charge_air(x_intake, y_intake)
+        cooled_packet = self.core.run_charge_air(x_intake, y_intake, step=self.current_step)
 
         # --- Tier 1: Auxiliary Injection Ring (Parallel Orbit) ---
         injected_packets, injected_entropy = self.injection.pulse(
@@ -432,6 +433,7 @@ class FluidPipeline:
                 vvt_telemetry=vvt_telemetry,
                 seq_telemetry=seq_telemetry,
                 cooled_packet=cooled_packet,
+                **kwargs,
             )
 
         return combustion_result
@@ -451,6 +453,7 @@ class FluidPipeline:
         vvt_telemetry: Dict[str, Any],
         seq_telemetry: Dict[str, Any],
         cooled_packet: FlowPacket,
+        **kwargs: Any,
     ) -> None:
         """Constructs and dispatches engine telemetry."""
         hyper_port = self.core.compressor.inlet_manifold.get_port("hyper")
@@ -496,5 +499,13 @@ class FluidPipeline:
             volumetric_efficiency=float(vvt_telemetry.get("volumetric_efficiency", 0.85)),
             vvt_gear=int(vvt_telemetry.get("vvt_gear", 2)),
             twin_scroll_balance=float(self.core.gradient_turbine.twin_scroll.pulse_balance) if self.core.gradient_turbine.twin_scroll else 1.0,
+            engine_overhead_ms=float(kwargs.get("engine_overhead_ms", 0.0)),
+            compute_efficiency_pct=float(kwargs.get("compute_efficiency_pct", 100.0)),
+            vram_free_pct=float(kwargs.get("vram_free_pct", 100.0)),
+            kalman_loss_velocity=float(kwargs.get("kalman_loss_velocity", 0.0)),
+            isolated_modules_count=sum(
+                1 for m in [self.core.intake, self.core.filter, self.core.compressor, self.core.intercooler, self.core.wastegate]
+                if hasattr(m, "circuit_breaker") and m.circuit_breaker.is_tripped
+            ),
         )
         self.telemetry_hub.emit(telemetry)

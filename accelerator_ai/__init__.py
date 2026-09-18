@@ -51,6 +51,10 @@ from accelerator_ai.security import InputGuard
 from accelerator_ai.benchmarks.nanogpt import NanoGPT, GPTConfig
 from accelerator_ai.wrapper import wrap
 from accelerator_ai.integrations import AcceleratorAICallback, AcceleratorAILightningCallback
+from accelerator_ai.core.engine_state import EngineState
+from accelerator_ai.core.circuit_breaker import ModuleCircuitBreaker, CircuitState
+from accelerator_ai.ecu.kalman import KalmanLossGovernor
+from accelerator_ai.security.vram_guard import VRAMPressureGuard, PressureLevel
 
 __version__ = "0.5.0"
 
@@ -105,4 +109,10 @@ __all__ = [
     "wrap",
     "AcceleratorAICallback",
     "AcceleratorAILightningCallback",
+    "EngineState",
+    "KalmanLossGovernor",
+    "ModuleCircuitBreaker",
+    "CircuitState",
+    "VRAMPressureGuard",
+    "PressureLevel",
 ]
