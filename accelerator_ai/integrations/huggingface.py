@@ -22,22 +22,6 @@ except ImportError:
 
 
 class AcceleratorAICallback(TrainerCallback):
-    """
-    Seamless Hugging Face Trainer integration.
-
-    Usage:
-        from transformers import Trainer
-        from accelerator_ai.integrations import AcceleratorAICallback
-
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=dataset,
-            callbacks=[AcceleratorAICallback(target_boost_psi=14.7, enable_soft_clipping=True)],
-        )
-        trainer.train()
-    """
-
     def __init__(
         self,
         target_boost_psi: float = 14.7,
@@ -46,11 +30,6 @@ class AcceleratorAICallback(TrainerCallback):
         enable_telemetry: bool = True,
         adaptive_boost: bool = True,
     ):
-        if not _TRANSFORMERS_AVAILABLE:
-            raise ImportError(
-                "transformers is not installed. Install with 'pip install transformers' "
-                "to use AcceleratorAICallback."
-            )
         self.target_boost_psi = target_boost_psi
         self.enable_soft_clipping = enable_soft_clipping
         self.clip_threshold = clip_threshold
@@ -61,6 +40,11 @@ class AcceleratorAICallback(TrainerCallback):
         self.recent_losses = []
         self.boost_ratio: float = 1.0
         self.current_gear: int = 2
+
+        if not _TRANSFORMERS_AVAILABLE:
+            logger.warning(
+                "transformers is not installed; AcceleratorAICallback will run in degraded mode."
+            )
 
     def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         logger.info("AcceleratorAI Turbine Callback engaged on Hugging Face Trainer.")
