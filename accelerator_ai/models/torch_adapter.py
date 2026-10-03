@@ -57,9 +57,14 @@ class PyTorchTurbineWrapper:
             self._register_hooks()
 
     def enable_capturable_optimizer(self) -> None:
-        """Enables capturable=True on optimizer parameter groups for CUDA Graph execution."""
+        """Enables capturable=True on optimizer parameter groups for CUDA Graph execution on supported devices only."""
+        try:
+            device_type = next(self.model.parameters()).device.type
+        except StopIteration:
+            device_type = "cpu"
+        supported = device_type in {"cuda", "xpu", "hpu", "privateuseone", "xla"}
         for param_group in self.optimizer.param_groups:
-            param_group["capturable"] = True
+            param_group["capturable"] = supported
 
 
     def _register_hooks(self) -> None:
